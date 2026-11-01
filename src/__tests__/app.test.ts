@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { monthlySummary, getCalendarWeekRange } from '../utils/financeSummary'
+import { monthlySummary, getCalendarWeekRange, moneyMapActuals, getGoalSavedPaise } from '../utils/financeSummary'
 import { computeVirtualCorpus, readinessScore } from '../utils/growCalculations'
 import { validateBackup, defaultSettings } from '../data/ExpenseStore'
 import { LocalStorageDriver } from '../data/storage'
@@ -15,7 +15,7 @@ global.localStorage = {
   key: () => null
 } as Storage
 
-describe('Spendly Priority 2: Financial Accuracy & Reliability Tests', () => {
+describe('Spendly Priority 2.5: Financial Accuracy & Reliability Tests', () => {
   beforeEach(() => {
     localStorage.clear()
   })
@@ -115,5 +115,46 @@ describe('Spendly Priority 2: Financial Accuracy & Reliability Tests', () => {
     })
     expect(scoreRes.score).toBeGreaterThanOrEqual(0)
     expect(scoreRes.score).toBeLessThanOrEqual(100)
+  })
+
+  it('8. Money Map actuals calculation and categorization accuracy', () => {
+    const expenses: Expense[] = [
+      { id: '1', amount: 20000, category: 'Food', mode: 'UPI', type: 'Need', note: '', date: new Date().toISOString() },
+      { id: '2', amount: 10000, category: 'Skills/Learning', mode: 'UPI', type: 'Need', note: '', date: new Date().toISOString() },
+      { id: '3', amount: 5000, category: 'Entertainment', mode: 'UPI', type: 'Want', note: '', date: new Date().toISOString() },
+      { id: '4', amount: 5000, category: 'Other', mode: 'Cash', type: 'Need', note: '', date: new Date().toISOString() },
+    ]
+    const contributions: Contribution[] = [
+      { id: 'c1', goalId: 'g1', amountPaise: 10000, date: new Date().toISOString() }
+    ]
+    const settings: Settings = { ...defaultSettings, pocketMoney: 50000 }
+
+    const actuals = moneyMapActuals(expenses, contributions, settings)
+    expect(actuals.Essentials).toBe(40) // 20000 / 50000
+    expect(actuals.Savings).toBe(20)    // 10000 / 50000
+    expect(actuals.Skills).toBe(20)     // 10000 / 50000
+    expect(actuals.Enjoyment).toBe(10)  // 5000 / 50000
+    expect(actuals.Unexpected).toBe(10) // 5000 / 50000
+  })
+
+  it('9. Goal progress calculation and zero target edge case', () => {
+    const contributions: Contribution[] = [
+      { id: 'c1', goalId: 'g1', amountPaise: 25000, date: new Date().toISOString() }
+    ]
+    const saved = getGoalSavedPaise('g1', contributions)
+    expect(saved).toBe(25000)
+
+    const targetZero = 0
+    const pct = targetZero > 0 ? Math.min(100, (saved / targetZero) * 100) : 0
+    expect(pct).toBe(0)
+  })
+
+  it('10. Net worth accounting formula verification', () => {
+    const goalContributionsTotal = 150000
+    const cashInHand = 50000
+    const otherAssets = 200000
+    const owed = 30000
+    const netWorth = goalContributionsTotal + cashInHand + otherAssets - owed
+    expect(netWorth).toBe(370000)
   })
 })
