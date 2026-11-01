@@ -259,20 +259,19 @@ export function Goals({ onBuyPause }: { onBuyPause?: (item: PauseItem) => void }
                   </p>
                   <div style={{ display: 'flex', gap: 4 }}>
                     <Button
-                      className="icon-button"
-                      style={{ width: 28, height: 28, minHeight: 28 }}
+                      className="icon-button goal-icon-button"
                       onClick={() => openEditGoal(g)}
                       aria-label={`Edit ${g.name}`}
                     >
-                      <Icon name="chevron" size={14} />
+                      <Icon name="chevron" size={16} />
                     </Button>
                     <Button
-                      className="icon-button"
-                      style={{ width: 28, height: 28, minHeight: 28, color: 'var(--danger)' }}
+                      className="icon-button goal-icon-button"
+                      style={{ color: 'var(--danger)' }}
                       onClick={() => setDeleteGoalConfirm(g)}
                       aria-label={`Delete ${g.name}`}
                     >
-                      <Icon name="trash" size={14} />
+                      <Icon name="trash" size={16} />
                     </Button>
                   </div>
                 </div>
@@ -281,16 +280,15 @@ export function Goals({ onBuyPause }: { onBuyPause?: (item: PauseItem) => void }
                 <div className="progress">
                   <i style={{ width: `${pct}%`, background: 'var(--positive)' }} />
                 </div>
-                <div style={{ display: 'flex', gap: 4, marginTop: 8 }}>
-                  <Button className="secondary" style={{ flex: 1, padding: '0 4px', fontSize: 10 }} onClick={() => addContribution(g.id, 10000)}>
+                <div className="goal-actions">
+                  <Button className="secondary" onClick={() => addContribution(g.id, 10000)}>
                     +₹100
                   </Button>
-                  <Button className="secondary" style={{ flex: 1, padding: '0 4px', fontSize: 10 }} onClick={() => addContribution(g.id, 50000)}>
+                  <Button className="secondary" onClick={() => addContribution(g.id, 50000)}>
                     +₹500
                   </Button>
                   <Button
                     className="secondary"
-                    style={{ flex: 1.2, padding: '0 4px', fontSize: 10 }}
                     onClick={() => {
                       setCustomContributionGoal(g)
                       setCustomContributionPaise(100000)

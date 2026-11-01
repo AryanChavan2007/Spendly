@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { EmptyState } from '../components/EmptyState'
 import { Button, formatMoney, Title } from '../components/ui'
 import { useExpenses } from '../data/ExpenseStore'
 import { categories, type Expense } from '../data/types'
@@ -55,6 +56,27 @@ export function Stats({ embedded = false }: { embedded?: boolean }) {
     .filter(x => x.value > 0)
     .sort((a, b) => b.value - a.value)
 
+  const chartColors = [
+    'var(--chart-1)',
+    'var(--chart-2)',
+    'var(--chart-3)',
+    'var(--chart-4)',
+    'var(--chart-5)',
+  ]
+  const chartCategories =
+    byCat.length > 4
+      ? [
+          ...byCat.slice(0, 4),
+          { name: 'Other categories', value: byCat.slice(4).reduce((n, category) => n + category.value, 0) },
+        ]
+      : byCat
+  let chartOffset = 0
+  const donutStops = chartCategories.map((category, i) => {
+    const start = chartOffset
+    chartOffset += category.value
+    return `${chartColors[i]} ${(start / total) * 100}% ${(chartOffset / total) * 100}%`
+  })
+
   const online = shown.filter(e => e.mode !== 'Cash').reduce((n, e) => n + e.amount, 0)
 
   const modes = ['UPI', 'Card', 'Cash', 'Net Banking']
@@ -69,7 +91,7 @@ export function Stats({ embedded = false }: { embedded?: boolean }) {
     d.setDate(d.getDate() - 6 + i)
     return {
       key: d.toISOString().slice(0, 10),
-      label: d.toLocaleDateString('en', { weekday: 'short' }).slice(0, 1),
+      label: d.toLocaleDateString('en', { weekday: 'short' }),
       value: shown
         .filter(e => new Date(e.date).toDateString() === d.toDateString())
         .reduce((n, e) => n + e.amount, 0),
@@ -111,7 +133,10 @@ export function Stats({ embedded = false }: { embedded?: boolean }) {
       </div>
 
       {!shown.length ? (
-        <div className="card empty">No spending data in this period.</div>
+        <EmptyState
+          title="No spending in this period"
+          body="Log expenses during this period to see your spending breakdown."
+        />
       ) : (
         <>
           <article className="card">
@@ -129,13 +154,10 @@ export function Stats({ embedded = false }: { embedded?: boolean }) {
             <div className="donut-area">
               <div
                 className="donut"
+                role="img"
+                aria-label="Spending by category"
                 style={{
-                  background:
-                    total > 0
-                      ? `conic-gradient(var(--accent) 0 ${(byCat[0]?.value / total) * 100 || 0}%, var(--purple) 0 ${
-                          (((byCat[0]?.value || 0) + (byCat[1]?.value || 0)) / total) * 100
-                        }%, var(--amber) 0 80%, var(--surface-3) 0)`
-                      : 'var(--surface-3)',
+                  background: total > 0 ? `conic-gradient(${donutStops.join(', ')})` : 'var(--surface-3)',
                 }}
               >
                 <div>
@@ -144,9 +166,9 @@ export function Stats({ embedded = false }: { embedded?: boolean }) {
                 </div>
               </div>
               <div className="legend">
-                {byCat.slice(0, 4).map((x, i) => (
+                {chartCategories.map((x, i) => (
                   <p key={x.name}>
-                    <i className={`dot d${i}`} />
+                    <i className={`dot d${i}`} style={{ background: chartColors[i] }} />
                     <span>{x.name}</span>
                     <strong>{total > 0 ? Math.round((x.value / total) * 100) : 0}%</strong>
                   </p>
@@ -162,11 +184,11 @@ export function Stats({ embedded = false }: { embedded?: boolean }) {
             </div>
             <div className="bars">
               {daily.map(d => (
-                <div key={d.key}>
-                  <span>
+                <div key={d.key} role="img" aria-label={`${d.label}, ${formatMoney(d.value)}`}>
+                  <span aria-hidden="true" title={`${d.label}: ${formatMoney(d.value)}`}>
                     <i style={{ height: `${Math.max(5, (d.value / max) * 100)}%` }} />
                   </span>
-                  <small>{d.label}</small>
+                  <small aria-hidden="true">{d.label}</small>
                 </div>
               ))}
             </div>
