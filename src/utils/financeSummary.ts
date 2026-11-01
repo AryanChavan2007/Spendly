@@ -152,21 +152,29 @@ export function calculateLoggingStreak(expenses: Expense[], now = new Date()): n
 
 export function getCalendarWeekRange(d = new Date()): { start: Date; end: Date; weekKey: string } {
   const target = new Date(d)
-  const day = target.getDay()
-  const diffToMonday = target.getDate() - day + (day === 0 ? -6 : 1)
-  const start = new Date(target)
-  start.setDate(diffToMonday)
-  start.setHours(0, 0, 0, 0)
-  const end = new Date(start)
-  end.setDate(end.getDate() + 6)
-  end.setHours(23, 59, 59, 999)
+  target.setHours(0, 0, 0, 0)
+  // Thursday in current week decides the ISO week-year
+  const dayNum = target.getDay() || 7
+  target.setDate(target.getDate() + 4 - dayNum)
+  const year = target.getFullYear()
 
-  const startOfYear = new Date(target.getFullYear(), 0, 1)
-  const days = Math.floor((target.getTime() - startOfYear.getTime()) / (24 * 3600 * 1000))
-  const weekNum = Math.ceil((days + startOfYear.getDay() + 1) / 7)
-  const weekKey = `${target.getFullYear()}-W${String(weekNum).padStart(2, '0')}`
+  const yearStart = new Date(year, 0, 1)
+  const weekNum = Math.ceil(((target.getTime() - yearStart.getTime()) / 86400000 + yearStart.getDay() + 1) / 7)
 
-  return { start, end, weekKey }
+  // Find Monday of current week
+  const monday = new Date(d)
+  const day = monday.getDay()
+  const diffToMonday = monday.getDate() - day + (day === 0 ? -6 : 1)
+  monday.setDate(diffToMonday)
+  monday.setHours(0, 0, 0, 0)
+
+  const sunday = new Date(monday)
+  sunday.setDate(sunday.getDate() + 6)
+  sunday.setHours(23, 59, 59, 999)
+
+  const weekKey = `${year}-W${String(weekNum).padStart(2, '0')}`
+
+  return { start: monday, end: sunday, weekKey }
 }
 
 export function getWeekKey(d = new Date()): string {

@@ -234,6 +234,8 @@ export function validateBackup(parsed: unknown): BackupValidationResult {
     }
   }
 
+  const goalIds = new Set(goals.map(g => g.id))
+
   const contributions: Contribution[] = []
   if (obj.contributions) {
     if (!Array.isArray(obj.contributions)) return { valid: false, error: '"contributions" must be an array.' }
@@ -339,11 +341,22 @@ export function validateBackup(parsed: unknown): BackupValidationResult {
   }
 
   const rawSip = (obj.sipConfig || {}) as Partial<SipConfig>
+  if (rawSip.linkedGoalId !== undefined && typeof rawSip.linkedGoalId === 'string') {
+    if (!goalIds.has(rawSip.linkedGoalId)) {
+      return { valid: false, error: `SIP config references non-existent linkedGoalId '${rawSip.linkedGoalId}'.` }
+    }
+  }
   const sipConfig: SipConfig = {
     amountPaise: Number.isInteger(rawSip.amountPaise) ? Math.max(0, rawSip.amountPaise!) : 50000,
     day: Number.isInteger(rawSip.day) ? Math.min(28, Math.max(1, rawSip.day!)) : 5,
     reminder: typeof rawSip.reminder === 'boolean' ? rawSip.reminder : true,
-    linkedGoalId: typeof rawSip.linkedGoalId === 'string' ? rawSip.linkedGoalId : undefined,
+    linkedGoalId: rawSip.linkedGoalId,
+  }
+
+  const rawUi = (obj.ui || {}) as Partial<UIState>
+  const ui: UIState = {
+    dismissedInsightWeek: typeof rawUi.dismissedInsightWeek === 'string' ? rawUi.dismissedInsightWeek : '',
+    triggeredBudgetAlerts: rawUi.triggeredBudgetAlerts && typeof rawUi.triggeredBudgetAlerts === 'object' ? rawUi.triggeredBudgetAlerts : {}
   }
 
   return {
@@ -368,7 +381,7 @@ export function validateBackup(parsed: unknown): BackupValidationResult {
       assets,
       netWorthSnapshots,
       challenge,
-      ui: { dismissedInsightWeek: '' },
+      ui,
     },
   }
 }
@@ -842,6 +855,7 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
           assets: data.assets,
           netWorthSnapshots: data.netWorthSnapshots,
           challenge: data.challenge,
+          ui: data.ui,
         }
         return JSON.stringify(payload, null, 2)
       },

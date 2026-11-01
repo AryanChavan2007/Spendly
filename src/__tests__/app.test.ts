@@ -35,7 +35,7 @@ describe('Spendly Comprehensive Audit & Reliability Tests', () => {
     expect(summary.remaining).toBe(-20000)
   })
 
-  it('2 & 3. validates backup and rejects invalid nested structures / invalid contribution goal references', () => {
+  it('2 & 3. validates backup and rejects malformed nested structures / invalid contribution goal references', () => {
     const validPayload = {
       version: 2,
       expenses: [],
@@ -43,15 +43,18 @@ describe('Spendly Comprehensive Audit & Reliability Tests', () => {
       goals: [{ id: 'g1', name: 'Emergency', targetPaise: 100000, level: 1, isEmergency: true, createdAt: new Date().toISOString() }],
       contributions: [{ id: 'c1', goalId: 'g1', amountPaise: 5000, date: new Date().toISOString() }],
       pauseItems: [],
-      sipConfig: { amountPaise: 50000, day: 5, reminder: true },
+      sipConfig: { amountPaise: 50000, day: 5, reminder: true, linkedGoalId: 'g1' },
       sipLogs: [],
       assets: { cashInHand: 0, otherAssets: 0, owed: 0 },
       netWorthSnapshots: [],
       challenge: { completed: [], reflection: '' },
-      ui: { dismissedInsightWeek: '' }
+      ui: { dismissedInsightWeek: '', triggeredBudgetAlerts: {} }
     }
     const resValid = validateBackup(validPayload)
     expect(resValid.valid).toBe(true)
+    if (resValid.valid) {
+      expect(resValid.data.ui.triggeredBudgetAlerts).toBeDefined()
+    }
 
     // Invalid contribution referencing non-existent goal ID
     const invalidGoalRefPayload = {
@@ -60,6 +63,14 @@ describe('Spendly Comprehensive Audit & Reliability Tests', () => {
     }
     const resInvalidRef = validateBackup(invalidGoalRefPayload)
     expect(resInvalidRef.valid).toBe(false)
+
+    // Malformed SIP linkedGoalId
+    const invalidSipGoalPayload = {
+      ...validPayload,
+      sipConfig: { amountPaise: 50000, day: 5, reminder: true, linkedGoalId: 'bad-id' }
+    }
+    const resInvalidSip = validateBackup(invalidSipGoalPayload)
+    expect(resInvalidSip.valid).toBe(false)
   })
 
   it('4. storage write failure handling and successful persistence', () => {
@@ -69,16 +80,16 @@ describe('Spendly Comprehensive Audit & Reliability Tests', () => {
     expect(driver.get('test-key')).toEqual({ foo: 'bar' })
   })
 
-  it('5. calendar-week boundaries and year transitions', () => {
-    const d1 = new Date(2024, 11, 30) // Dec 30, 2024
+  it('5. calendar-week boundaries and year transitions (Dec 2024 to Jan 2025)', () => {
+    const d1 = new Date(2024, 11, 30) // Dec 30, 2024 (Monday)
     const range1 = getCalendarWeekRange(d1)
     expect(range1.start).toBeInstanceOf(Date)
     expect(range1.end).toBeInstanceOf(Date)
-    expect(range1.weekKey).toContain('2024')
+    expect(range1.weekKey).toBe('2025-W01')
 
-    const d2 = new Date(2025, 0, 2) // Jan 2, 2025
+    const d2 = new Date(2025, 0, 2) // Jan 2, 2025 (Thursday)
     const range2 = getCalendarWeekRange(d2)
-    expect(range2.weekKey).toContain('2025')
+    expect(range2.weekKey).toBe('2025-W01')
   })
 
   it('6. SIP calculations and compounding expectations', () => {
