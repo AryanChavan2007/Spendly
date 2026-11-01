@@ -1,0 +1,10 @@
+{
+  "description": "Track daily cash and digital expenses, manage budgets, and review spending trends with an offline-first personal finance app that keeps your data on your device.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
