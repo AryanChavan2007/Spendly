@@ -150,11 +150,27 @@ export function calculateLoggingStreak(expenses: Expense[], now = new Date()): n
   return 0
 }
 
-export function getWeekKey(d = new Date()): string {
-  const startOfYear = new Date(d.getFullYear(), 0, 1)
-  const days = Math.floor((d.getTime() - startOfYear.getTime()) / (24 * 3600 * 1000))
+export function getCalendarWeekRange(d = new Date()): { start: Date; end: Date; weekKey: string } {
+  const target = new Date(d)
+  const day = target.getDay()
+  const diffToMonday = target.getDate() - day + (day === 0 ? -6 : 1)
+  const start = new Date(target)
+  start.setDate(diffToMonday)
+  start.setHours(0, 0, 0, 0)
+  const end = new Date(start)
+  end.setDate(end.getDate() + 6)
+  end.setHours(23, 59, 59, 999)
+
+  const startOfYear = new Date(target.getFullYear(), 0, 1)
+  const days = Math.floor((target.getTime() - startOfYear.getTime()) / (24 * 3600 * 1000))
   const weekNum = Math.ceil((days + startOfYear.getDay() + 1) / 7)
-  return `${d.getFullYear()}-W${String(weekNum).padStart(2, '0')}`
+  const weekKey = `${target.getFullYear()}-W${String(weekNum).padStart(2, '0')}`
+
+  return { start, end, weekKey }
+}
+
+export function getWeekKey(d = new Date()): string {
+  return getCalendarWeekRange(d).weekKey
 }
 
 export type WeeklyInsight = {
@@ -169,19 +185,21 @@ export function computeWeeklyInsight(
   dismissedWeek?: string,
   now = new Date()
 ): WeeklyInsight | null {
-  const currentWeek = getWeekKey(now)
-  if (dismissedWeek === currentWeek) return null
+  const currentRange = getCalendarWeekRange(now)
+  if (dismissedWeek === currentRange.weekKey) return null
   if (expenses.length < 3) return null
 
-  const nowMs = now.getTime()
-  const sevenDaysMs = 7 * 86400000
+  const prevDate = new Date(currentRange.start)
+  prevDate.setDate(prevDate.getDate() - 7)
+  const prevRange = getCalendarWeekRange(prevDate)
+
   const thisWeekExpenses = expenses.filter(e => {
-    const age = nowMs - new Date(e.date).getTime()
-    return age >= 0 && age < sevenDaysMs
+    const t = new Date(e.date).getTime()
+    return t >= currentRange.start.getTime() && t <= currentRange.end.getTime()
   })
   const lastWeekExpenses = expenses.filter(e => {
-    const age = nowMs - new Date(e.date).getTime()
-    return age >= sevenDaysMs && age < 2 * sevenDaysMs
+    const t = new Date(e.date).getTime()
+    return t >= prevRange.start.getTime() && t <= prevRange.end.getTime()
   })
 
   if (thisWeekExpenses.length === 0) return null

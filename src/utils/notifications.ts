@@ -95,13 +95,11 @@ export async function syncNotifications(state: StoredData): Promise<void> {
 
   isSyncing = true
   try {
-    // Only schedule if user has already granted permission
     const hasPerm = await hasNotificationPermission()
     if (!hasPerm) {
       return
     }
 
-    // Ensure notification channel exists on Android 8+
     try {
       await LocalNotifications.createChannel({
         id: 'spendly_reminders',
@@ -111,12 +109,20 @@ export async function syncNotifications(state: StoredData): Promise<void> {
         visibility: 1,
         vibration: true,
       })
-    } catch {
-      // Ignored if channel already exists or not on Android
-    }
+    } catch {}
 
-    // Cancel all previously scheduled notifications to re-sync cleanly
-    await LocalNotifications.cancelAll()
+    // Cancel only Spendly's notifications (IDs 1001, 1002, 1003, 1004, 9999, 3000+, 20000+)
+    try {
+      const pending = await LocalNotifications.getPending()
+      const spendlyIds = pending.notifications
+        .map(n => n.id)
+        .filter(id => id === 1001 || id === 1002 || id === 1003 || id === 1004 || id === 9999 || id >= 3000)
+      if (spendlyIds.length > 0) {
+        await LocalNotifications.cancel({ notifications: spendlyIds.map(id => ({ id })) })
+      }
+    } catch (err) {
+      console.debug('Could not fetch/cancel pending notifications:', err)
+    }
 
     const toSchedule: LocalNotificationSchema[] = []
 
@@ -139,8 +145,10 @@ export async function syncNotifications(state: StoredData): Promise<void> {
       })
     }
 
-    // 2. Practice SIP Reminder (monthly on sipConfig.day)
-    if (state.settings.sipReminders && state.sipConfig.reminder) {
+    // 2. Practice SIP Reminder (monthly on sipConfig.day, skip if already logged this month)
+    const currentMonth = new Date().toISOString().slice(0, 7)
+    const alreadyLoggedSip = state.sipLogs.some(l => l.monthKey === currentMonth)
+    if (state.settings.sipReminders && state.sipConfig.reminder && !alreadyLoggedSip) {
       const targetDay = Math.min(28, Math.max(1, state.sipConfig.day || 5))
       const sipAmountRupees = Math.round(state.sipConfig.amountPaise / 100)
       toSchedule.push({
@@ -159,11 +167,11 @@ export async function syncNotifications(state: StoredData): Promise<void> {
       })
     }
 
-    // 3. 24h pause list item ready: schedule at item.readyAt
+    // 3. 24h pause list item ready: schedule at item.readyAt (only if status is waiting/paused and not decided/expired)
     if (state.settings.pauseReminders) {
       const now = Date.now()
       state.pauseItems
-        .filter(item => item.status === 'paused' || item.status === 'waiting')
+        .filter(item => (item.status === 'paused' || item.status === 'waiting') && !item.decidedAt)
         .forEach(item => {
           const readyAtMs = new Date(item.readyAt).getTime()
           if (readyAtMs > now) {
@@ -181,15 +189,16 @@ export async function syncNotifications(state: StoredData): Promise<void> {
         })
     }
 
-    // 4. Budget warnings: when spending crosses 80% and 100% of pocket money
+    // 4. Budget warnings: when spending crosses 80% and 100% of pocket money (triggered once per threshold per month)
     if (state.settings.warnings && state.settings.pocketMoney > 0) {
-      const currentMonth = new Date().toISOString().slice(0, 7)
       const monthlySpent = state.expenses
         .filter(e => e.date.startsWith(currentMonth))
         .reduce((sum, e) => sum + e.amount, 0)
 
       const ratio = monthlySpent / state.settings.pocketMoney
-      if (ratio >= 1.0) {
+      const triggeredMap = state.ui.triggeredBudgetAlerts || {}
+
+      if (ratio >= 1.0 && !triggeredMap[`${currentMonth}-100`]) {
         toSchedule.push({
           id: 1004,
           title: 'Budget Limit Exceeded! ⚠️',
@@ -200,7 +209,8 @@ export async function syncNotifications(state: StoredData): Promise<void> {
             allowWhileIdle: true,
           },
         })
-      } else if (ratio >= 0.8) {
+        triggeredMap[`${currentMonth}-100`] = true
+      } else if (ratio >= 0.8 && ratio < 1.0 && !triggeredMap[`${currentMonth}-80`]) {
         toSchedule.push({
           id: 1003,
           title: 'Budget Alert (80%) ⚠️',
@@ -211,6 +221,7 @@ export async function syncNotifications(state: StoredData): Promise<void> {
             allowWhileIdle: true,
           },
         })
+        triggeredMap[`${currentMonth}-80`] = true
       }
     }
 

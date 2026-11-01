@@ -5,7 +5,7 @@ import { categories, type Category, type PlannedEssentialCategory } from '../dat
 import { Capacitor } from '@capacitor/core'
 import { Filesystem, Directory } from '@capacitor/filesystem'
 import { Share } from '@capacitor/share'
-import { openBatteryOptimizationSettings, requestNotificationPermission } from '../utils/notifications'
+import { openBatteryOptimizationSettings, requestNotificationPermission, sendTestNotification } from '../utils/notifications'
 
 function Toggle({ on, set }: { on: boolean; set: (v: boolean) => void }) {
   return (
@@ -273,6 +273,20 @@ export function Settings({ onClose }: { onClose?: () => void }) {
               </div>
               <Icon name="chevron" />
             </div>
+          )}
+          {Capacitor.isNativePlatform() && (
+            <Button className="setting-row action" onClick={async () => {
+              const success = await sendTestNotification()
+              if (success) {
+                alert('Test notification scheduled for 1 second from now!')
+              }
+            }}>
+              <div>
+                <strong>Test notification</strong>
+                <small>Send a test alert right now</small>
+              </div>
+              <Icon name="chevron" />
+            </Button>
           )}
           <div className="setting-row">
             <div>

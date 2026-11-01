@@ -1,6 +1,6 @@
 export interface StorageDriver {
   get<T = unknown>(key: string): T | null
-  set<T = unknown>(key: string, value: T): void
+  set<T = unknown>(key: string, value: T): boolean
   remove(key: string): void
 }
 
@@ -11,7 +11,6 @@ export class LocalStorageDriver implements StorageDriver {
       if (item === null) return null
       return JSON.parse(item) as T
     } catch (e) {
-      // If parsing fails, return raw string or null
       try {
         return (localStorage.getItem(key) as unknown) as T
       } catch {
@@ -20,15 +19,14 @@ export class LocalStorageDriver implements StorageDriver {
     }
   }
 
-  set<T = unknown>(key: string, value: T): void {
+  set<T = unknown>(key: string, value: T): boolean {
     try {
-      if (typeof value === 'string') {
-        localStorage.setItem(key, value)
-      } else {
-        localStorage.setItem(key, JSON.stringify(value))
-      }
+      const serialized = typeof value === 'string' ? value : JSON.stringify(value)
+      localStorage.setItem(key, serialized)
+      return true
     } catch (e) {
-      console.warn(`[Storage] Error setting key ${key}:`, e)
+      console.error(`[Storage] Failed to persist key ${key} (Storage quota exceeded or storage disabled):`, e)
+      return false
     }
   }
 
