@@ -182,10 +182,29 @@ export function computeVirtualCorpus(sipLogs: SipLog[]): {
   let totalContributed = 0
   const series: { monthKey: string; corpus: number }[] = []
 
+  let prevYear: number | null = null
+  let prevMonth: number | null = null
+
   for (const log of sorted) {
+    const [yStr, mStr] = log.monthKey.split('-')
+    const y = parseInt(yStr, 10)
+    const m = parseInt(mStr, 10)
+
+    if (prevYear !== null && prevMonth !== null) {
+      const monthDiff = (y - prevYear) * 12 + (m - prevMonth)
+      if (monthDiff > 1) {
+        for (let i = 1; i < monthDiff; i++) {
+          corpus = corpus * (1 + monthlyRate)
+        }
+      }
+    }
+
     corpus = (corpus + log.amountPaise) * (1 + monthlyRate)
     totalContributed += log.amountPaise
     series.push({ monthKey: log.monthKey, corpus: Math.round(corpus) })
+
+    prevYear = y
+    prevMonth = m
   }
 
   return {

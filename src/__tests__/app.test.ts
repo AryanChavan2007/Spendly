@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { monthlySummary, getCalendarWeekRange } from '../utils/financeSummary'
+import { computeVirtualCorpus, readinessScore } from '../utils/growCalculations'
 import { validateBackup, defaultSettings } from '../data/ExpenseStore'
 import { LocalStorageDriver } from '../data/storage'
 import type { Expense, Contribution, Settings } from '../data/types'
@@ -14,7 +15,7 @@ global.localStorage = {
   key: () => null
 } as Storage
 
-describe('Spendly Comprehensive Audit & Reliability Tests', () => {
+describe('Spendly Priority 2: Financial Accuracy & Reliability Tests', () => {
   beforeEach(() => {
     localStorage.clear()
   })
@@ -92,10 +93,27 @@ describe('Spendly Comprehensive Audit & Reliability Tests', () => {
     expect(range2.weekKey).toBe('2025-W01')
   })
 
-  it('6. SIP calculations and compounding expectations', () => {
-    const monthlyPaise = 50000 // ₹500
-    const months = 12
-    const totalInvested = monthlyPaise * months
-    expect(totalInvested).toBe(600000)
+  it('6. SIP virtual corpus calculation with missing calendar months', () => {
+    const logs = [
+      { id: '1', monthKey: '2026-01', amountPaise: 10000, date: new Date().toISOString() },
+      { id: '2', monthKey: '2026-03', amountPaise: 10000, date: new Date().toISOString() } // Feb missed
+    ]
+    const res = computeVirtualCorpus(logs)
+    expect(res.totalContributed).toBe(20000)
+    expect(res.virtualCorpus).toBeGreaterThan(20000)
+  })
+
+  it('7. Readiness score bounds (0 to 100)', () => {
+    const scoreRes = readinessScore({
+      emergencySaved: 150000,
+      monthlyEssentials: 50000,
+      loggedDays: 20,
+      stayedInBudget: true,
+      goalProgress: 0.8,
+      hasHighInterestDebt: false,
+      hasEmergencyGoal: true,
+    })
+    expect(scoreRes.score).toBeGreaterThanOrEqual(0)
+    expect(scoreRes.score).toBeLessThanOrEqual(100)
   })
 })
