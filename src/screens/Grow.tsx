@@ -541,8 +541,8 @@ export function Grow() {
           </div>
           <strong className="net-total">{formatMoney(netWorth)}</strong>
         </div>
-        <p className="formula">
-          Assets {formatMoney(totalAssets)} − liabilities {formatMoney(assets.owed)}
+        <p className="formula" style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 12, lineHeight: 1.5 }}>
+          Net Worth = Savings goals ({formatMoney(goalAssets)}) + Cash in hand ({formatMoney(assets.cashInHand)}) + Other assets ({formatMoney(assets.otherAssets)}) − Money owed ({formatMoney(assets.owed)}). Savings goals are tracked separately to prevent double-counting.
         </p>
 
         <div className="planner-inputs">

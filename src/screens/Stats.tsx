@@ -1,27 +1,50 @@
 import { useState } from 'react'
 import { Button, formatMoney, Title } from '../components/ui'
 import { useExpenses } from '../data/ExpenseStore'
-import { categories } from '../data/types'
+import { categories, type Expense } from '../data/types'
+import { getCalendarWeekRange, isThisMonth } from '../utils/financeSummary'
 
 export function Stats({ embedded = false }: { embedded?: boolean }) {
   const { expenses } = useExpenses()
   const [range, setRange] = useState<'Daily' | 'Weekly' | 'Monthly'>('Weekly')
 
-  const daysBack = range === 'Daily' ? 1 : range === 'Weekly' ? 7 : 30
-  const cutoff = new Date()
-  cutoff.setDate(cutoff.getDate() - daysBack)
+  const now = new Date()
+  let shown: Expense[] = []
+  let prevShown: Expense[] = []
 
-  const prevCutoff = new Date(cutoff)
-  prevCutoff.setDate(prevCutoff.getDate() - daysBack)
+  if (range === 'Daily') {
+    shown = expenses.filter(e => {
+      const d = new Date(e.date)
+      return d.getDate() === now.getDate() && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
+    })
+    const prevDay = new Date(now)
+    prevDay.setDate(prevDay.getDate() - 1)
+    prevShown = expenses.filter(e => {
+      const d = new Date(e.date)
+      return d.getDate() === prevDay.getDate() && d.getMonth() === prevDay.getMonth() && d.getFullYear() === prevDay.getFullYear()
+    })
+  } else if (range === 'Weekly') {
+    const currentWeekRange = getCalendarWeekRange(now)
+    shown = expenses.filter(e => {
+      const t = new Date(e.date).getTime()
+      return t >= currentWeekRange.start.getTime() && t <= currentWeekRange.end.getTime()
+    })
+    const prevWeekStart = new Date(currentWeekRange.start)
+    prevWeekStart.setDate(prevWeekStart.getDate() - 7)
+    const prevWeekEnd = new Date(currentWeekRange.start)
+    prevWeekEnd.setMilliseconds(-1)
+    prevShown = expenses.filter(e => {
+      const t = new Date(e.date).getTime()
+      return t >= prevWeekStart.getTime() && t <= prevWeekEnd.getTime()
+    })
+  } else {
+    shown = expenses.filter(e => isThisMonth(e.date, now))
+    const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+    prevShown = expenses.filter(e => isThisMonth(e.date, prevMonthDate))
+  }
 
-  const shown = expenses.filter(e => new Date(e.date) >= cutoff)
   const total = shown.reduce((n, e) => n + e.amount, 0)
-
-  const prevExpenses = expenses.filter(e => {
-    const d = new Date(e.date)
-    return d >= prevCutoff && d < cutoff
-  })
-  const prevTotal = prevExpenses.reduce((n, e) => n + e.amount, 0)
+  const prevTotal = prevShown.reduce((n, e) => n + e.amount, 0)
   const trend = prevTotal > 0 ? Math.round(((total - prevTotal) / prevTotal) * 100) : null
 
   const byCat = categories
