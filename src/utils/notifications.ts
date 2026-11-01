@@ -83,7 +83,10 @@ export async function sendTestNotification(): Promise<boolean> {
 let isSyncing = false
 let pendingState: StoredData | null = null
 
-export async function syncNotifications(state: StoredData): Promise<void> {
+export async function syncNotifications(
+  state: StoredData,
+  onTriggerThreshold?: (key: string) => void
+): Promise<void> {
   if (!Capacitor.isNativePlatform() || !Capacitor.isPluginAvailable('LocalNotifications')) {
     return
   }
@@ -111,12 +114,23 @@ export async function syncNotifications(state: StoredData): Promise<void> {
       })
     } catch {}
 
-    // Cancel only Spendly's notifications (IDs 1001, 1002, 1003, 1004, 9999, 3000+, 20000+)
+    // Cancel ONLY Spendly's owned notifications using explicit ID registry ranges
+    // Reserved ranges: 1001 (daily), 1002 (SIP), 1003 (80% budget), 1004 (100% budget), 9999 (test),
+    // 3000-3999 (category limits), 20000-69999 (pause items).
     try {
       const pending = await LocalNotifications.getPending()
       const spendlyIds = pending.notifications
         .map(n => n.id)
-        .filter(id => id === 1001 || id === 1002 || id === 1003 || id === 1004 || id === 9999 || id >= 3000)
+        .filter(
+          id =>
+            id === 1001 ||
+            id === 1002 ||
+            id === 1003 ||
+            id === 1004 ||
+            id === 9999 ||
+            (id >= 3000 && id < 4000) ||
+            (id >= 20000 && id < 70000)
+        )
       if (spendlyIds.length > 0) {
         await LocalNotifications.cancel({ notifications: spendlyIds.map(id => ({ id })) })
       }
@@ -167,11 +181,11 @@ export async function syncNotifications(state: StoredData): Promise<void> {
       })
     }
 
-    // 3. 24h pause list item ready: schedule at item.readyAt (only if status is waiting/paused and not decided/expired)
+    // 3. 24h pause list item ready: schedule at item.readyAt (only if waiting and un-decided)
     if (state.settings.pauseReminders) {
       const now = Date.now()
       state.pauseItems
-        .filter(item => (item.status === 'paused' || item.status === 'waiting') && !item.decidedAt)
+        .filter(item => item.status === 'waiting' && !item.decidedAt)
         .forEach(item => {
           const readyAtMs = new Date(item.readyAt).getTime()
           if (readyAtMs > now) {
@@ -189,7 +203,7 @@ export async function syncNotifications(state: StoredData): Promise<void> {
         })
     }
 
-    // 4. Budget warnings: when spending crosses 80% and 100% of pocket money (triggered once per threshold per month)
+    // 4. Budget warnings: when spending crosses 80% and 100% of pocket money (triggered once per calendar month)
     if (state.settings.warnings && state.settings.pocketMoney > 0) {
       const monthlySpent = state.expenses
         .filter(e => e.date.startsWith(currentMonth))
@@ -209,7 +223,7 @@ export async function syncNotifications(state: StoredData): Promise<void> {
             allowWhileIdle: true,
           },
         })
-        triggeredMap[`${currentMonth}-100`] = true
+        onTriggerThreshold?.(`${currentMonth}-100`)
       } else if (ratio >= 0.8 && ratio < 1.0 && !triggeredMap[`${currentMonth}-80`]) {
         toSchedule.push({
           id: 1003,
@@ -221,7 +235,7 @@ export async function syncNotifications(state: StoredData): Promise<void> {
             allowWhileIdle: true,
           },
         })
-        triggeredMap[`${currentMonth}-80`] = true
+        onTriggerThreshold?.(`${currentMonth}-80`)
       }
     }
 
@@ -240,7 +254,7 @@ export async function syncNotifications(state: StoredData): Promise<void> {
     if (pendingState) {
       const next = pendingState
       pendingState = null
-      void syncNotifications(next)
+      void syncNotifications(next, onTriggerThreshold)
     }
   }
 }

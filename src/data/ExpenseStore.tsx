@@ -256,6 +256,12 @@ export function validateBackup(parsed: unknown): BackupValidationResult {
         date: c.date,
       })
     }
+    const goalIds = new Set(goals.map(g => g.id))
+    for (const c of contributions) {
+      if (!goalIds.has(c.goalId)) {
+        return { valid: false, error: `Contribution '${c.id}' references non-existent goal ID '${c.goalId}'.` }
+      }
+    }
   }
 
   const pauseItems: PauseItem[] = []
@@ -418,10 +424,14 @@ function initStore(): StoredData {
         ui: { dismissedInsightWeek: '' },
       }
 
-      storage.remove('spendly-expenses')
-      storage.remove('spendly-settings')
-      storage.set(STORE_KEY, initialV2)
-      return initialV2
+      const persistSuccess = storage.set(STORE_KEY, initialV2)
+      if (persistSuccess) {
+        storage.remove('spendly-expenses')
+        storage.remove('spendly-settings')
+        return initialV2
+      } else {
+        console.error('[ExpenseStore] Safe migration failed to persist v2 state. Preserving legacy data.')
+      }
     }
   } catch (err) {
     console.error('Error loading Spendly store:', err)
@@ -495,8 +505,22 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
 
   // Persist whenever data changes & sync notifications
   useEffect(() => {
-    storage.set(STORE_KEY, data)
-    void syncNotifications(data)
+    const success = storage.set(STORE_KEY, data)
+    if (!success) {
+      console.error('[ExpenseStore] CRITICAL: Failed to persist data to storage!')
+    }
+    void syncNotifications(data, thresholdKey => {
+      setData(prev => ({
+        ...prev,
+        ui: {
+          ...prev.ui,
+          triggeredBudgetAlerts: {
+            ...(prev.ui.triggeredBudgetAlerts || {}),
+            [thresholdKey]: true,
+          },
+        },
+      }))
+    })
   }, [data])
 
   // Sync status bar when theme or amoled changes

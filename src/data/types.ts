@@ -74,6 +74,7 @@ export type Challenge = {
 
 export type UIState = {
   dismissedInsightWeek: string
+  triggeredBudgetAlerts?: Record<string, boolean>
 }
 
 export type PlannedEssentialCategory = 'Travel' | 'Food' | 'Phone & Data' | 'Academic'
