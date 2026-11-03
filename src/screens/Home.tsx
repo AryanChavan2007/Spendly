@@ -7,6 +7,7 @@ import {
   computeWeeklyInsight,
   getCategoryOverLimit,
   getWeekKey,
+  getLastSevenDaysTotal,
   moneyMapActuals,
   monthlySummary,
 } from '../utils/financeSummary'
@@ -34,9 +35,7 @@ export function Home({
   const pct = Math.min(100, rawPct)
   const actuals = moneyMapActuals(expenses, contributions, settings)
   const buckets = Object.keys(settings.moneyMap) as (keyof typeof settings.moneyMap)[]
-  const weekly = expenses
-    .filter(e => Date.now() - +new Date(e.date) < 7 * 86400000)
-    .reduce((n, e) => n + e.amount, 0)
+  const weekly = getLastSevenDaysTotal(expenses)
   const over = getCategoryOverLimit(expenses, settings.categoryLimits)
   const insight = computeWeeklyInsight(expenses, ui.dismissedInsightWeek)
 

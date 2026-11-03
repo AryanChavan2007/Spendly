@@ -3,7 +3,7 @@ import { EmptyState } from '../components/EmptyState'
 import { Button, formatMoney, Title } from '../components/ui'
 import { useExpenses } from '../data/ExpenseStore'
 import { categories, type Expense } from '../data/types'
-import { getCalendarWeekRange, isThisMonth } from '../utils/financeSummary'
+import { getCalendarWeekRange, getLastSevenDaysSpending, isThisMonth } from '../utils/financeSummary'
 
 export function Stats({ embedded = false }: { embedded?: boolean }) {
   const { expenses } = useExpenses()
@@ -86,17 +86,7 @@ export function Stats({ embedded = false }: { embedded?: boolean }) {
     }))
     .filter(x => x.value > 0)
 
-  const daily = [...Array(7)].map((_, i) => {
-    const d = new Date()
-    d.setDate(d.getDate() - 6 + i)
-    return {
-      key: d.toISOString().slice(0, 10),
-      label: d.toLocaleDateString('en', { weekday: 'short' }),
-      value: shown
-        .filter(e => new Date(e.date).toDateString() === d.toDateString())
-        .reduce((n, e) => n + e.amount, 0),
-    }
-  })
+  const daily = getLastSevenDaysSpending(expenses, now)
   const max = Math.max(...daily.map(d => d.value), 1)
 
   const byDay = Object.values(
@@ -184,8 +174,8 @@ export function Stats({ embedded = false }: { embedded?: boolean }) {
             </div>
             <div className="bars">
               {daily.map(d => (
-                <div key={d.key} role="img" aria-label={`${d.label}, ${formatMoney(d.value)}`}>
-                  <span aria-hidden="true" title={`${d.label}: ${formatMoney(d.value)}`}>
+                <div key={d.key} role="img" aria-label={`${d.fullLabel}, ${formatMoney(d.value)}`}>
+                  <span aria-hidden="true" title={`${d.fullLabel}: ${formatMoney(d.value)}`}>
                     <i style={{ height: `${Math.max(5, (d.value / max) * 100)}%` }} />
                   </span>
                   <small aria-hidden="true">{d.label}</small>

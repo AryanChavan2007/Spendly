@@ -11,13 +11,51 @@ import { toPaise } from '../data/types'
 
 export { toPaise }
 
+export function getLocalMonthKey(date = new Date()): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+}
+
 export function isThisMonth(dateStrOrObj: string | Date, now = new Date()): boolean {
   const d = new Date(dateStrOrObj)
   return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
 }
 
+export function getLastSevenDaysSpending(expenses: Expense[], now = new Date()) {
+  const firstDay = new Date(now)
+  firstDay.setHours(0, 0, 0, 0)
+  firstDay.setDate(firstDay.getDate() - 6)
+
+  return Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(firstDay)
+    date.setDate(firstDay.getDate() + index)
+    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+    const value = expenses.reduce((sum, expense) => {
+      const expenseDate = new Date(expense.date)
+      return expenseDate <= now && expenseDate.toDateString() === date.toDateString()
+        ? sum + expense.amount
+        : sum
+    }, 0)
+
+    return {
+      key,
+      label: date.toLocaleDateString('en', { weekday: 'short' }).slice(0, 3),
+      fullLabel: date.toLocaleDateString('en', { weekday: 'long' }),
+      value,
+    }
+  })
+}
+
+export function getLastSevenDaysTotal(expenses: Expense[], now = new Date()) {
+  const end = now.getTime()
+  const start = end - 7 * 86400000
+  return expenses.reduce((sum, expense) => {
+    const timestamp = new Date(expense.date).getTime()
+    return timestamp >= start && timestamp <= end ? sum + expense.amount : sum
+  }, 0)
+}
+
 export function currentMonthExpenses(expenses: Expense[], now = new Date()): Expense[] {
-  return expenses.filter(e => isThisMonth(e.date, now))
+  return expenses.filter(e => isThisMonth(e.date, now) && new Date(e.date) <= now)
 }
 
 export function currentMonthContributions(contributions: Contribution[], now = new Date()): Contribution[] {
@@ -30,8 +68,8 @@ export function getGoalSavedPaise(goalId: string, contributions: Contribution[])
     .reduce((sum, c) => sum + c.amountPaise, 0)
 }
 
-export function getMonthlyEssentials(expenses: Expense[], settings: Settings): number {
-  const needExpenses = expenses.filter(e => (e.type || 'Need') === 'Need')
+export function getMonthlyEssentials(expenses: Expense[], settings: Settings, now = new Date()): number {
+  const needExpenses = expenses.filter(e => (e.type || 'Need') === 'Need' && new Date(e.date) <= now)
   const planned = settings.plannedEssentials
   const fallback =
     (planned.Travel ?? 70000) +
@@ -203,7 +241,7 @@ export function computeWeeklyInsight(
 
   const thisWeekExpenses = expenses.filter(e => {
     const t = new Date(e.date).getTime()
-    return t >= currentRange.start.getTime() && t <= currentRange.end.getTime()
+    return t >= currentRange.start.getTime() && t <= Math.min(currentRange.end.getTime(), now.getTime())
   })
   const lastWeekExpenses = expenses.filter(e => {
     const t = new Date(e.date).getTime()
@@ -243,10 +281,15 @@ export function computeWeeklyInsight(
     }
   }
 
+  const today = new Date(now)
+  today.setHours(23, 59, 59, 999)
+  const elapsedDays = ((now.getDay() + 6) % 7) + 1
   const daysWithSpending = new Set(
-    thisWeekExpenses.map(e => new Date(e.date).toDateString())
+    thisWeekExpenses
+      .filter(e => new Date(e.date) <= today)
+      .map(e => new Date(e.date).toDateString())
   ).size
-  const noSpendDays = Math.max(0, 7 - daysWithSpending)
+  const noSpendDays = Math.max(0, elapsedDays - daysWithSpending)
   if (noSpendDays >= 2) {
     return {
       type: 'no_spend_days',

@@ -67,8 +67,9 @@ export function Settings({ onClose }: { onClose?: () => void }) {
   }
 
   const handleToggle = async (key: 'reminder' | 'warnings' | 'pauseReminders' | 'sipReminders', value: boolean) => {
-    if (value) {
-      await requestNotificationPermission()
+    if (value && Capacitor.isNativePlatform()) {
+      const granted = await requestNotificationPermission()
+      if (!granted) return
     }
     updateSettings({ [key]: value })
   }

@@ -195,6 +195,8 @@ export function validateBackup(parsed: unknown): BackupValidationResult {
 
   // 2. Versioned object
   const obj = parsed as Record<string, unknown>
+  const isMonthKey = (value: unknown): value is string =>
+    typeof value === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(value)
   const ver = obj.version ?? obj.schemaVersion
   if (ver !== 2) {
     return { valid: false, error: 'Unsupported backup version. Expected version 2.' }
@@ -294,20 +296,76 @@ export function validateBackup(parsed: unknown): BackupValidationResult {
   }
 
   const sipLogs: SipLog[] = []
-  if (obj.sipLogs && Array.isArray(obj.sipLogs)) {
-    for (const l of obj.sipLogs as Partial<SipLog>[]) {
-      if (l && typeof l.id === 'string' && typeof l.monthKey === 'string' && Number.isInteger(l.amountPaise)) {
-        sipLogs.push({
-          id: l.id,
-          monthKey: l.monthKey,
-          amountPaise: l.amountPaise!,
-          date: l.date || new Date().toISOString(),
-        })
+  if (obj.sipLogs !== undefined) {
+    if (!Array.isArray(obj.sipLogs)) return { valid: false, error: '"sipLogs" must be an array.' }
+    for (let i = 0; i < obj.sipLogs.length; i++) {
+      const l = obj.sipLogs[i] as Partial<SipLog> | null
+      if (!l || typeof l !== 'object') return { valid: false, error: `SIP log at index ${i} is invalid.` }
+      if (typeof l.id !== 'string' || !l.id.trim() || !isMonthKey(l.monthKey)) {
+        return { valid: false, error: `SIP log at index ${i} has an invalid id or month key.` }
       }
+      if (!Number.isInteger(l.amountPaise) || (l.amountPaise ?? -1) < 0) {
+        return { valid: false, error: `SIP log '${l.id}' amount must be an integer >= 0.` }
+      }
+      if (l.date !== undefined && (typeof l.date !== 'string' || Number.isNaN(Date.parse(l.date)))) {
+        return { valid: false, error: `SIP log '${l.id}' has an invalid date.` }
+      }
+      sipLogs.push({
+        id: l.id,
+        monthKey: l.monthKey,
+        amountPaise: l.amountPaise!,
+        date: l.date || new Date().toISOString(),
+      })
     }
   }
 
+  if (
+    obj.settings !== undefined &&
+    (!obj.settings || typeof obj.settings !== 'object' || Array.isArray(obj.settings))
+  ) {
+    return { valid: false, error: '"settings" must be an object.' }
+  }
   const rawSettings = (obj.settings || {}) as Partial<Settings>
+  for (const key of ['budget', 'pocketMoney'] as const) {
+    const value = rawSettings[key]
+    if (value !== undefined && (!Number.isInteger(value) || value < 0)) {
+      return { valid: false, error: `Setting '${key}' must be an integer >= 0.` }
+    }
+  }
+  if (
+    rawSettings.receivedDay !== undefined &&
+    (!Number.isInteger(rawSettings.receivedDay) || rawSettings.receivedDay < 1 || rawSettings.receivedDay > 31)
+  ) {
+    return { valid: false, error: "Setting 'receivedDay' must be an integer from 1 to 31." }
+  }
+  for (const key of ['reminder', 'warnings', 'pauseReminders', 'sipReminders', 'amoled'] as const) {
+    const value = rawSettings[key]
+    if (value !== undefined && typeof value !== 'boolean') {
+      return { valid: false, error: `Setting '${key}' must be a boolean.` }
+    }
+  }
+  if (rawSettings.theme !== undefined && !['dark', 'light', 'system'].includes(rawSettings.theme)) {
+    return { valid: false, error: "Setting 'theme' must be 'dark', 'light', or 'system'." }
+  }
+  if (rawSettings.name !== undefined && typeof rawSettings.name !== 'string') {
+    return { valid: false, error: "Setting 'name' must be a string." }
+  }
+  const numericSettings = [
+    ['moneyMap', rawSettings.moneyMap],
+    ['plannedEssentials', rawSettings.plannedEssentials],
+    ['categoryLimits', rawSettings.categoryLimits],
+  ] as const
+  for (const [name, values] of numericSettings) {
+    if (values === undefined) continue
+    if (!values || typeof values !== 'object' || Array.isArray(values)) {
+      return { valid: false, error: `Setting '${name}' must be an object.` }
+    }
+    for (const [key, value] of Object.entries(values)) {
+      if (!Number.isInteger(value) || value < 0) {
+        return { valid: false, error: `Setting '${name}.${key}' must be an integer >= 0.` }
+      }
+    }
+  }
   const settings: Settings = {
     ...defaultSettings,
     ...rawSettings,
@@ -319,18 +377,43 @@ export function validateBackup(parsed: unknown): BackupValidationResult {
     categoryLimits: { ...(rawSettings.categoryLimits || {}) },
   }
 
+  if (obj.assets !== undefined && (!obj.assets || typeof obj.assets !== 'object' || Array.isArray(obj.assets))) {
+    return { valid: false, error: '"assets" must be an object.' }
+  }
   const rawAssets = (obj.assets || {}) as Partial<Assets>
+  for (const key of ['cashInHand', 'otherAssets', 'owed'] as const) {
+    const value = rawAssets[key]
+    if (value !== undefined && (!Number.isInteger(value) || value < 0)) {
+      return { valid: false, error: `Asset '${key}' must be an integer >= 0.` }
+    }
+  }
   const assets: Assets = {
     cashInHand: Number.isInteger(rawAssets.cashInHand) ? Math.max(0, rawAssets.cashInHand!) : 0,
     otherAssets: Number.isInteger(rawAssets.otherAssets) ? Math.max(0, rawAssets.otherAssets!) : 0,
     owed: Number.isInteger(rawAssets.owed) ? Math.max(0, rawAssets.owed!) : 0,
   }
 
-  const netWorthSnapshots: NetWorthSnapshot[] = Array.isArray(obj.netWorthSnapshots)
-    ? (obj.netWorthSnapshots as Partial<NetWorthSnapshot>[])
-        .filter(s => s && typeof s.monthKey === 'string' && Number.isInteger(s.netWorthPaise))
-        .map(s => ({ monthKey: s.monthKey!, netWorthPaise: s.netWorthPaise! }))
-    : []
+  const netWorthSnapshots: NetWorthSnapshot[] = []
+  if (obj.netWorthSnapshots !== undefined) {
+    if (!Array.isArray(obj.netWorthSnapshots)) {
+      return { valid: false, error: '"netWorthSnapshots" must be an array.' }
+    }
+    for (let i = 0; i < obj.netWorthSnapshots.length; i++) {
+      const snapshot = obj.netWorthSnapshots[i] as Partial<NetWorthSnapshot> | null
+      if (
+        !snapshot ||
+        typeof snapshot !== 'object' ||
+        !isMonthKey(snapshot.monthKey) ||
+        !Number.isInteger(snapshot.netWorthPaise)
+      ) {
+        return { valid: false, error: `Net worth snapshot at index ${i} is invalid.` }
+      }
+      netWorthSnapshots.push({
+        monthKey: snapshot.monthKey,
+        netWorthPaise: snapshot.netWorthPaise!,
+      })
+    }
+  }
 
   const rawChallenge = (obj.challenge || {}) as Partial<Challenge>
   const challenge: Challenge = {
@@ -536,11 +619,6 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
     })
   }, [data])
 
-  // Sync status bar when theme or amoled changes
-  useEffect(() => {
-    void syncStatusBar(data.settings.theme, data.settings.amoled)
-  }, [data.settings.theme, data.settings.amoled])
-
   // Monthly net worth snapshot upsert
   useEffect(() => {
     const now = new Date()
@@ -570,6 +648,7 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
       document.documentElement.dataset.theme =
         data.settings.theme === 'system' ? (media.matches ? 'dark' : 'light') : data.settings.theme
       document.documentElement.dataset.amoled = data.settings.amoled ? 'true' : 'false'
+      void syncStatusBar(data.settings.theme, data.settings.amoled)
     }
     applyTheme()
     media.addEventListener('change', applyTheme)

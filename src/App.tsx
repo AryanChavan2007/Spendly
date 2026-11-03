@@ -1,4 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { App as CapacitorApp } from '@capacitor/app'
+import { Capacitor } from '@capacitor/core'
 import { ExpenseProvider, useExpenses } from './data/ExpenseStore'
 import { AddExpense } from './screens/AddExpense'
 import { History } from './screens/History'
@@ -13,7 +15,44 @@ function AppContent() {
   const [tab, setTab] = useState<Tab>('home')
   const [adding, setAdding] = useState(false)
   const [settings, setSettings] = useState(false)
+  const navigationState = useRef({ adding, settings, tab })
   const { setDraft } = useExpenses()
+
+  navigationState.current = { adding, settings, tab }
+
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return
+
+    let mounted = true
+    let removeListener: (() => void) | undefined
+    void CapacitorApp.addListener('backButton', ({ canGoBack }) => {
+      const current = navigationState.current
+      if (current.adding) {
+        setAdding(false)
+      } else if (current.settings) {
+        setSettings(false)
+      } else if (current.tab !== 'home') {
+        setTab('home')
+      } else if (canGoBack) {
+        window.history.back()
+      } else {
+        void CapacitorApp.exitApp()
+      }
+    }).then(listener => {
+      if (mounted) {
+        removeListener = () => {
+          void listener.remove()
+        }
+      } else {
+        void listener.remove()
+      }
+    })
+
+    return () => {
+      mounted = false
+      removeListener?.()
+    }
+  }, [])
 
   const handleBuyPause = (item: PauseItem) => {
     const d = new Date()

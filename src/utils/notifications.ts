@@ -1,6 +1,7 @@
 import { Capacitor } from '@capacitor/core'
 import { LocalNotifications, type LocalNotificationSchema } from '@capacitor/local-notifications'
 import type { StoredData } from '../data/ExpenseStore'
+import { currentMonthExpenses, getLocalMonthKey } from './financeSummary'
 
 function hashString(str: string): number {
   let hash = 0
@@ -139,6 +140,7 @@ export async function syncNotifications(
     }
 
     const toSchedule: LocalNotificationSchema[] = []
+    const triggeredThresholds: string[] = []
 
     // 1. Daily Log Reminder
     if (state.settings.reminder) {
@@ -160,7 +162,7 @@ export async function syncNotifications(
     }
 
     // 2. Practice SIP Reminder (monthly on sipConfig.day, skip if already logged this month)
-    const currentMonth = new Date().toISOString().slice(0, 7)
+    const currentMonth = getLocalMonthKey()
     const alreadyLoggedSip = state.sipLogs.some(l => l.monthKey === currentMonth)
     if (state.settings.sipReminders && state.sipConfig.reminder && !alreadyLoggedSip) {
       const targetDay = Math.min(28, Math.max(1, state.sipConfig.day || 5))
@@ -205,8 +207,7 @@ export async function syncNotifications(
 
     // 4. Budget warnings: when spending crosses 80% and 100% of pocket money (triggered once per calendar month)
     if (state.settings.warnings && state.settings.pocketMoney > 0) {
-      const monthlySpent = state.expenses
-        .filter(e => e.date.startsWith(currentMonth))
+      const monthlySpent = currentMonthExpenses(state.expenses)
         .reduce((sum, e) => sum + e.amount, 0)
 
       const ratio = monthlySpent / state.settings.pocketMoney
@@ -223,7 +224,7 @@ export async function syncNotifications(
             allowWhileIdle: true,
           },
         })
-        onTriggerThreshold?.(`${currentMonth}-100`)
+        triggeredThresholds.push(`${currentMonth}-100`)
       } else if (ratio >= 0.8 && ratio < 1.0 && !triggeredMap[`${currentMonth}-80`]) {
         toSchedule.push({
           id: 1003,
@@ -235,13 +236,15 @@ export async function syncNotifications(
             allowWhileIdle: true,
           },
         })
-        onTriggerThreshold?.(`${currentMonth}-80`)
+        triggeredThresholds.push(`${currentMonth}-80`)
       }
     }
 
     if (toSchedule.length > 0) {
       await LocalNotifications.schedule({ notifications: toSchedule })
     }
+
+    triggeredThresholds.forEach(key => onTriggerThreshold?.(key))
 
     if (import.meta.env.DEV) {
       const pending = await LocalNotifications.getPending()

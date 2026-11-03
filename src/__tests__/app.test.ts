@@ -1,5 +1,15 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { monthlySummary, getCalendarWeekRange, moneyMapActuals, getGoalSavedPaise } from '../utils/financeSummary'
+import {
+  monthlySummary,
+  getCalendarWeekRange,
+  getGoalSavedPaise,
+  getLastSevenDaysSpending,
+  getLastSevenDaysTotal,
+  getLocalMonthKey,
+  getMonthlyEssentials,
+  moneyMapActuals,
+  computeWeeklyInsight,
+} from '../utils/financeSummary'
 import { computeVirtualCorpus, readinessScore } from '../utils/growCalculations'
 import { validateBackup, defaultSettings } from '../data/ExpenseStore'
 import { LocalStorageDriver } from '../data/storage'
@@ -147,6 +157,99 @@ describe('Spendly Priority 2.5: Financial Accuracy & Reliability Tests', () => {
     const targetZero = 0
     const pct = targetZero > 0 ? Math.min(100, (saved / targetZero) * 100) : 0
     expect(pct).toBe(0)
+  })
+
+  it('daily spending always covers the last seven calendar days', () => {
+    const now = new Date(2026, 10, 4, 12)
+    const expenses: Expense[] = [
+      { id: 'today', amount: 1250, category: 'Food', mode: 'Cash', type: 'Need', note: '', date: now.toISOString() },
+      {
+        id: 'oldest',
+        amount: 2500,
+        category: 'Travel',
+        mode: 'UPI',
+        type: 'Need',
+        note: '',
+        date: new Date(2026, 9, 29, 12).toISOString(),
+      },
+    ]
+
+    const daily = getLastSevenDaysSpending(expenses, now)
+    expect(daily).toHaveLength(7)
+    expect(daily[0].value).toBe(2500)
+    expect(daily[6].value).toBe(1250)
+  })
+
+  it('weekly no-spend insights count only elapsed days', () => {
+    const monday = new Date(2025, 2, 3, 12)
+    const expenses: Expense[] = [
+      { id: '1', amount: 100, category: 'Food', mode: 'Cash', type: 'Need', note: '', date: monday.toISOString() },
+      { id: '2', amount: 100, category: 'Travel', mode: 'Cash', type: 'Need', note: '', date: monday.toISOString() },
+      { id: '3', amount: 100, category: 'Academic', mode: 'Cash', type: 'Need', note: '', date: monday.toISOString() },
+    ]
+
+    expect(computeWeeklyInsight(expenses, undefined, monday)).toBeNull()
+    const wednesday = new Date(2025, 2, 5, 12)
+    expect(computeWeeklyInsight(expenses, undefined, wednesday)).toMatchObject({
+      type: 'no_spend_days',
+      title: 'You had 2 no-spend days this week',
+    })
+  })
+
+  it('month keys follow local calendar boundaries', () => {
+    expect(getLocalMonthKey(new Date(2026, 0, 1, 0, 5))).toBe('2026-01')
+  })
+
+  it('rejects malformed SIP logs and net worth snapshots instead of dropping them', () => {
+    const validPayload = {
+      version: 2,
+      expenses: [],
+      sipLogs: [{ id: 'sip-1', monthKey: '2026-01', amountPaise: 10000, date: '2026-01-15T00:00:00.000Z' }],
+      netWorthSnapshots: [{ monthKey: '2026-01', netWorthPaise: -1000 }],
+    }
+
+    expect(validateBackup(validPayload).valid).toBe(true)
+    expect(validateBackup({ ...validPayload, sipLogs: [{ id: 'bad', monthKey: '2026-13', amountPaise: 1 }] }).valid).toBe(false)
+    expect(validateBackup({ ...validPayload, netWorthSnapshots: [{ monthKey: '2026-01', netWorthPaise: 'invalid' }] }).valid).toBe(false)
+  })
+
+  it('rejects invalid financial settings and asset values in backups', () => {
+    const validPayload = {
+      version: 2,
+      expenses: [],
+      settings: { ...defaultSettings },
+      assets: { cashInHand: 1000, otherAssets: 0, owed: 0 },
+    }
+
+    expect(validateBackup(validPayload).valid).toBe(true)
+    expect(validateBackup({ ...validPayload, settings: { pocketMoney: 'unknown' } }).valid).toBe(false)
+    expect(validateBackup({ ...validPayload, assets: { cashInHand: '1000' } }).valid).toBe(false)
+    expect(validateBackup({ ...validPayload, settings: { moneyMap: { Savings: -1 } } }).valid).toBe(false)
+  })
+
+  it('excludes future-dated expenses from current financial summaries', () => {
+    const now = new Date(2026, 2, 15, 12)
+    const expenses: Expense[] = [
+      { id: 'past', amount: 100, category: 'Food', mode: 'UPI', type: 'Need', note: '', date: new Date(2026, 2, 14, 12).toISOString() },
+      { id: 'future', amount: 10000, category: 'Shopping', mode: 'UPI', type: 'Want', note: '', date: new Date(2026, 2, 16, 12).toISOString() },
+    ]
+
+    expect(getLastSevenDaysTotal(expenses, now)).toBe(100)
+    expect(monthlySummary(expenses, [], defaultSettings, now).spent).toBe(100)
+    expect(moneyMapActuals(expenses, [], defaultSettings, now).Enjoyment).toBe(0)
+  })
+
+  it('ignores future-dated expenses when calculating weekly insights and monthly essentials', () => {
+    const now = new Date(2026, 0, 7, 12)
+    const expenses: Expense[] = [
+      { id: 'this-week', amount: 100, category: 'Food', mode: 'UPI', type: 'Need', note: '', date: new Date(2026, 0, 6, 12).toISOString() },
+      { id: 'future-this-week', amount: 900, category: 'Shopping', mode: 'UPI', type: 'Want', note: '', date: new Date(2026, 0, 8, 12).toISOString() },
+      { id: 'last-week', amount: 200, category: 'Food', mode: 'UPI', type: 'Need', note: '', date: new Date(2025, 11, 30, 12).toISOString() },
+      { id: 'future-month', amount: 15000, category: 'Food', mode: 'UPI', type: 'Need', note: '', date: new Date(2026, 2, 16, 12).toISOString() },
+    ]
+
+    expect(computeWeeklyInsight(expenses, undefined, now)?.title).toContain('Food')
+    expect(getMonthlyEssentials(expenses, defaultSettings, now)).toBe(150)
   })
 
   it('10. Net worth accounting formula verification', () => {
