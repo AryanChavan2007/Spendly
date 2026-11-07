@@ -21,3 +21,10 @@ logs/
 /.opencode-skills/
 oracleJdk-*/
 
+# Local development files & build artifacts
+.gradle/
+.idea/
+local.properties
+**/build/
+*.iml
+.DS_Store
