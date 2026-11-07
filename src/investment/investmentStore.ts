@@ -44,7 +44,7 @@ function addMovement(
     return failure('Cash movement ID must be unique.')
   }
   const cashInHand = state.assets.cashInHand + deltaPaise
-  if (!Number.isSafeInteger(cashInHand) || cashInHand < 0) return failure('There is not enough cash for this transaction.')
+  if (!Number.isSafeInteger(cashInHand)) return failure('Cash amount is invalid.')
   const movement: InvestmentCashMovement = {
     id: movementId,
     transactionId: transaction.id,

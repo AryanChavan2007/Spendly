@@ -21,19 +21,19 @@ export function Home({
   onSettings: () => void
   onGoals: () => void
 }) {
-  const { expenses, contributions, settings, challenge, ui, dismissWeeklyInsight, edit, remove } = useExpenses()
+  const { expenses, contributions, settings, challenge, ui, investmentCashMovements, dismissWeeklyInsight, edit, remove } = useExpenses()
 
   const today = expenses
     .filter(e => sameDay(e.date, new Date()))
     .sort((a, b) => +new Date(b.date) - +new Date(a.date))
   const todaySpent = today.reduce((n, e) => n + e.amount, 0)
-  const summary = monthlySummary(expenses, contributions, settings)
+  const summary = monthlySummary(expenses, contributions, settings, investmentCashMovements)
   const totalOut = summary.spent + summary.saved
   const isOver = summary.received > 0 && totalOut > summary.received
   const overAmt = totalOut - summary.received
   const rawPct = summary.received > 0 ? (totalOut / summary.received) * 100 : 0
   const pct = Math.min(100, rawPct)
-  const actuals = moneyMapActuals(expenses, contributions, settings)
+  const actuals = moneyMapActuals(expenses, contributions, settings, investmentCashMovements)
   const buckets = Object.keys(settings.moneyMap) as (keyof typeof settings.moneyMap)[]
   const weekly = getLastSevenDaysTotal(expenses)
   const over = getCategoryOverLimit(expenses, settings.categoryLimits)

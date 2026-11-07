@@ -37,6 +37,7 @@ export function Goals({ onBuyPause }: { onBuyPause?: (item: PauseItem) => void }
     goals,
     pauseItems,
     challenge,
+    investmentCashMovements,
     updateSettings,
     addGoal,
     updateGoal,
@@ -49,7 +50,7 @@ export function Goals({ onBuyPause }: { onBuyPause?: (item: PauseItem) => void }
     setChallengeReflection,
   } = useExpenses()
 
-  const summary = monthlySummary(expenses, contributions, settings)
+  const summary = monthlySummary(expenses, contributions, settings, investmentCashMovements)
   const streak = calculateLoggingStreak(expenses)
   const waitingSaved = savedByWaitingThisMonth(pauseItems)
   const plannedActuals = getPlannedEssentialsActuals(expenses)

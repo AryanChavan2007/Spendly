@@ -876,7 +876,12 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
       remove: (id: string) => {
         setData(prev => {
           const item = prev.expenses.find(e => e.id === id)
-          if (item) setDeleted(item)
+          if (item) {
+            setDeleted(item)
+            setTimeout(() => {
+              setDeleted(d => (d?.id === item.id ? undefined : d))
+            }, 4000)
+          }
           return {
             ...prev,
             expenses: prev.expenses.filter(e => e.id !== id),

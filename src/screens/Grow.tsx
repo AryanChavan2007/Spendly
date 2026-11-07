@@ -89,7 +89,7 @@ export function Grow() {
   const emergencySaved = emergencyGoal ? getGoalSavedPaise(emergencyGoal.id, contributions) : 0
   const monthlyEssentials = getMonthlyEssentials(expenses, settings)
 
-  const summary = monthlySummary(expenses, contributions, settings)
+  const summary = monthlySummary(expenses, contributions, settings, investmentCashMovements)
   const monthSpent = summary.spent
   const monthSaved = summary.saved
   const stayedInBudget = monthSpent + monthSaved <= settings.pocketMoney

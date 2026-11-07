@@ -232,12 +232,13 @@ describe('investment accounting calculations', () => {
     expect(calculateInvestmentPositions(sold.state.investmentTransactions).get('fund-1')?.quantityMicros).toBe(0)
   })
 
-  it('rejects duplicate IDs, unknown instruments, oversells, and insufficient cash atomically', () => {
+  it('allows investments exceeding cash balance and rejects duplicate IDs, unknown instruments, and oversells atomically', () => {
     const initial = stateWithInstrument(10_000)
-    const tooExpensive = addInvestmentTrade(initial, trade({ id: 'buy-1', cashMovementIds: [] }), 'movement-1')
-    expect(tooExpensive.ok).toBe(false)
-    expect(initial.assets.cashInHand).toBe(10_000)
-    expect(initial.investmentTransactions).toHaveLength(0)
+    const tooExpensive = addInvestmentTrade(initial, trade({ id: 'buy-1', cashMovementIds: [], unitPricePaise: 100_000 }), 'movement-1')
+    expect(tooExpensive.ok).toBe(true)
+    if (tooExpensive.ok) {
+      expect(tooExpensive.state.assets.cashInHand).toBe(-90_000)
+    }
 
     const bought = addInvestmentTrade(stateWithInstrument(), trade({ id: 'buy-1', cashMovementIds: [] }), 'movement-1')
     if (!bought.ok) throw new Error(bought.error)

@@ -223,6 +223,44 @@ export function Settings({ onClose }: { onClose?: () => void }) {
               </div>
             </label>
           ))}
+
+          <div className="divider" />
+          {(() => {
+            const moneyMapNames = ['Essentials', 'Savings', 'Skills', 'Enjoyment', 'Unexpected'] as const
+            const alloc = moneyMapNames.map(n => settings.moneyMap[n] || 0)
+            const allocTotal = alloc.reduce((a, b) => a + b, 0)
+            return (
+              <>
+                <p className="setting-label">
+                  Money Map allocation <small>5 Buckets ({allocTotal}%)</small>
+                </p>
+                {moneyMapNames.map((x, i) => (
+                  <label className="slider-row" key={x}>
+                    <span>
+                      {x}
+                      <b>{alloc[i]}%</b>
+                    </span>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={alloc[i]}
+                      onChange={e =>
+                        updateSettings({
+                          moneyMap: { ...settings.moneyMap, [x]: Number(e.target.value) },
+                        })
+                      }
+                    />
+                  </label>
+                ))}
+                {allocTotal !== 100 && (
+                  <p style={{ fontSize: 11, color: 'var(--amber)', marginTop: 6 }}>
+                    Total allocation is {allocTotal}%. Aim for 100%.
+                  </p>
+                )}
+              </>
+            )
+          })()}
         </article>
       </section>
 

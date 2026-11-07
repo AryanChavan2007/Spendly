@@ -7,6 +7,7 @@ import type {
   PlannedEssentialCategory,
   Settings,
 } from '../data/types'
+import type { InvestmentCashMovement } from '../investment/types'
 import { toPaise } from '../data/types'
 
 export { toPaise }
@@ -102,10 +103,27 @@ export function monthlySummary(
   expenses: Expense[],
   contributions: Contribution[],
   settings: Settings,
-  now = new Date()
+  arg4?: InvestmentCashMovement[] | Date,
+  arg5?: Date
 ) {
+  let investmentCashMovements: InvestmentCashMovement[] = []
+  let now = new Date()
+
+  if (Array.isArray(arg4)) {
+    investmentCashMovements = arg4
+    if (arg5 instanceof Date) now = arg5
+  } else if (arg4 instanceof Date) {
+    now = arg4
+  }
+
   const monthExpenses = currentMonthExpenses(expenses, now)
-  const spent = monthExpenses.reduce((sum, expense) => sum + expense.amount, 0)
+  const spentFromExpenses = monthExpenses.reduce((sum, expense) => sum + expense.amount, 0)
+  const movements = Array.isArray(investmentCashMovements) ? investmentCashMovements : []
+  const investmentOutflows = movements
+    .filter(m => m && typeof m.deltaPaise === 'number' && m.deltaPaise < 0 && isThisMonth(m.date, now))
+    .reduce((sum, m) => sum + Math.abs(m.deltaPaise), 0)
+
+  const spent = spentFromExpenses + investmentOutflows
   const saved = currentMonthContributions(contributions, now).reduce((sum, c) => sum + c.amountPaise, 0)
   const received = settings.pocketMoney
   const remaining = received - spent - saved
@@ -132,12 +150,28 @@ export function moneyMapActuals(
   expenses: Expense[],
   contributions: Contribution[],
   settings: Settings,
-  now = new Date()
+  arg4?: InvestmentCashMovement[] | Date,
+  arg5?: Date
 ): Record<MoneyBucket, number> {
+  let investmentCashMovements: InvestmentCashMovement[] = []
+  let now = new Date()
+
+  if (Array.isArray(arg4)) {
+    investmentCashMovements = arg4
+    if (arg5 instanceof Date) now = arg5
+  } else if (arg4 instanceof Date) {
+    now = arg4
+  }
+
   const monthSaved = currentMonthContributions(contributions, now).reduce((sum, c) => sum + c.amountPaise, 0)
+  const movements = Array.isArray(investmentCashMovements) ? investmentCashMovements : []
+  const investmentOutflows = movements
+    .filter(m => m && typeof m.deltaPaise === 'number' && m.deltaPaise < 0 && isThisMonth(m.date, now))
+    .reduce((sum, m) => sum + Math.abs(m.deltaPaise), 0)
+
   const totals: Record<MoneyBucket, number> = {
     Essentials: 0,
-    Savings: monthSaved,
+    Savings: monthSaved + investmentOutflows,
     Skills: 0,
     Enjoyment: 0,
     Unexpected: 0,
