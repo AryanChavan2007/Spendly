@@ -112,6 +112,22 @@ export function monthlySummary(
   return { received, spent, saved, remaining }
 }
 
+export function calculateNetWorthPaise(
+  goalAssetsPaise: number,
+  cashInHandPaise: number,
+  otherAssetsPaise: number,
+  owedPaise: number,
+  investmentValuePaise = 0
+): number {
+  const values = [goalAssetsPaise, cashInHandPaise, otherAssetsPaise, owedPaise, investmentValuePaise]
+  if (values.some(value => !Number.isSafeInteger(value) || value < 0)) {
+    throw new RangeError('Net worth components must be non-negative safe integers in paise.')
+  }
+  const netWorth = goalAssetsPaise + cashInHandPaise + otherAssetsPaise + investmentValuePaise - owedPaise
+  if (!Number.isSafeInteger(netWorth)) throw new RangeError('Net worth is outside the supported range.')
+  return netWorth
+}
+
 export function moneyMapActuals(
   expenses: Expense[],
   contributions: Contribution[],

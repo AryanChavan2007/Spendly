@@ -25,7 +25,7 @@ import { syncNotifications } from '../utils/notifications'
 
 function stateWithBudgetThreshold(): StoredData {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     expenses: [{
       id: 'threshold-expense',
       amount: 8000,
@@ -49,6 +49,10 @@ function stateWithBudgetThreshold(): StoredData {
     sipConfig: { amountPaise: 50000, day: 5, reminder: false },
     sipLogs: [],
     assets: { cashInHand: 0, otherAssets: 0, owed: 0 },
+    investmentInstruments: [],
+    investmentTransactions: [],
+    investmentCashMovements: [],
+    investmentValuations: [],
     netWorthSnapshots: [],
     challenge: { completed: [], reflection: '' },
     ui: { dismissedInsightWeek: '', triggeredBudgetAlerts: {} },

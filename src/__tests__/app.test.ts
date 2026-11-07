@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import {
+  calculateNetWorthPaise,
   monthlySummary,
   getCalendarWeekRange,
   getGoalSavedPaise,
@@ -259,5 +260,57 @@ describe('Spendly Priority 2.5: Financial Accuracy & Reliability Tests', () => {
     const owed = 30000
     const netWorth = goalContributionsTotal + cashInHand + otherAssets - owed
     expect(netWorth).toBe(370000)
+  })
+
+  it('migrates version 2 backups to v3 without changing cash or existing records', () => {
+    const validation = validateBackup({
+      version: 2,
+      expenses: [],
+      assets: { cashInHand: 2_000_000, otherAssets: 0, owed: 0 },
+    })
+
+    expect(validation.valid).toBe(true)
+    if (!validation.valid) return
+    expect(validation.data.schemaVersion).toBe(3)
+    expect(validation.data.assets.cashInHand).toBe(2_000_000)
+    expect(validation.data.investmentInstruments).toEqual([])
+    expect(validation.data.investmentTransactions).toEqual([])
+  })
+
+  it('preserves net worth when cash is transferred into an investment', () => {
+    expect(calculateNetWorthPaise(0, 1_500_000, 0, 0, 500_000)).toBe(2_000_000)
+  })
+
+  it('validates version 3 investment references and rejects invalid investment dates', () => {
+    const payload = {
+      version: 3,
+      expenses: [],
+      assets: { cashInHand: 1_500_000, otherAssets: 0, owed: 0 },
+      investmentInstruments: [{
+        id: 'stock-1', type: 'stocks', name: 'Example holding', createdAt: '2026-01-01T00:00:00.000Z',
+      }],
+      investmentTransactions: [{
+        id: 'buy-1', instrumentId: 'stock-1', type: 'buy', quantityMicros: 1_000_000,
+        unitPricePaise: 500_000, feesPaise: 0, taxesPaise: 0, date: '2026-01-01T00:00:00.000Z',
+        note: '', status: 'active', cashMovementIds: ['movement-1'],
+      }],
+      investmentCashMovements: [{
+        id: 'movement-1', transactionId: 'buy-1', deltaPaise: -500_000, reason: 'trade',
+        date: '2026-01-01T00:00:00.000Z',
+      }],
+      investmentValuations: [{
+        id: 'valuation-1', instrumentId: 'stock-1', unitPricePaise: 500_000,
+        asOf: '2026-01-01T00:00:00.000Z', recordedAt: '2026-01-01T00:00:00.000Z', source: 'transaction',
+      }],
+    }
+
+    expect(validateBackup(payload).valid).toBe(true)
+    expect(validateBackup({ ...payload, investmentTransactions: [{ ...payload.investmentTransactions[0], instrumentId: 'missing' }] }).valid).toBe(false)
+    expect(validateBackup({ ...payload, investmentTransactions: [{ ...payload.investmentTransactions[0], date: '2026-02-30T00:00:00.000Z' }] }).valid).toBe(false)
+    expect(validateBackup({
+      ...payload,
+      investmentCashMovements: [{ ...payload.investmentCashMovements[0], deltaPaise: -499_999 }],
+    }).valid).toBe(false)
+    expect(validateBackup({ version: 3, expenses: [] }).valid).toBe(false)
   })
 })

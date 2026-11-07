@@ -42,6 +42,30 @@ import { storage } from './storage'
 import { syncNotifications } from '../utils/notifications'
 import { syncStatusBar } from '../utils/statusBar'
 import { hapticLight } from '../utils/haptics'
+import { calculateNetWorthPaise } from '../utils/financeSummary'
+import {
+  calculateInvestmentPositions,
+  calculatePortfolioValuePaise,
+  getTradeCashDeltaPaise,
+} from '../investment/investmentCalculations'
+import {
+  addInvestmentInstrument as addInstrumentToState,
+  addInvestmentTrade as addTradeToState,
+  addInvestmentValuation as addValuationToState,
+  addInvestmentWithTrade as addInstrumentAndTradeToState,
+  removeInvestmentInstrument as removeInstrumentFromState,
+  undoVoidInvestmentTrade,
+  updateInvestmentInstrument as updateInstrumentInState,
+  updateInvestmentTrade as updateTradeInState,
+  voidInvestmentTrade,
+} from '../investment/investmentStore'
+import { isValidDate, validateInstrument, validateInvestmentTransaction } from '../investment/investmentValidation'
+import type {
+  InvestmentCashMovement,
+  InvestmentInstrument,
+  InvestmentTransaction,
+  InvestmentValuation,
+} from '../investment/types'
 
 const STORE_KEY = 'spendly-v2'
 
@@ -90,7 +114,7 @@ export const defaultSettings: Settings = {
 }
 
 export type StoredData = {
-  schemaVersion: 2
+  schemaVersion: 3
   expenses: Expense[]
   settings: Settings
   goals: Goal[]
@@ -99,6 +123,10 @@ export type StoredData = {
   sipConfig: SipConfig
   sipLogs: SipLog[]
   assets: Assets
+  investmentInstruments: InvestmentInstrument[]
+  investmentTransactions: InvestmentTransaction[]
+  investmentCashMovements: InvestmentCashMovement[]
+  investmentValuations: InvestmentValuation[]
   netWorthSnapshots: NetWorthSnapshot[]
   challenge: Challenge
   ui: UIState
@@ -114,6 +142,8 @@ export type BackupValidationResult =
         contributions: number
         pauseItems: number
         sipLogs: number
+        investmentInstruments: number
+        investmentTransactions: number
       }
       data: StoredData
     }
@@ -175,9 +205,11 @@ export function validateBackup(parsed: unknown): BackupValidationResult {
         contributions: 0,
         pauseItems: 0,
         sipLogs: 0,
+        investmentInstruments: 0,
+        investmentTransactions: 0,
       },
       data: {
-        schemaVersion: 2,
+        schemaVersion: 3,
         expenses,
         settings: defaultSettings,
         goals: [],
@@ -186,6 +218,10 @@ export function validateBackup(parsed: unknown): BackupValidationResult {
         sipConfig: { amountPaise: 50000, day: 5, reminder: true },
         sipLogs: [],
         assets: { cashInHand: 0, otherAssets: 0, owed: 0 },
+        investmentInstruments: [],
+        investmentTransactions: [],
+        investmentCashMovements: [],
+        investmentValuations: [],
         netWorthSnapshots: [],
         challenge: { completed: [], reflection: '' },
         ui: { dismissedInsightWeek: '' },
@@ -198,8 +234,8 @@ export function validateBackup(parsed: unknown): BackupValidationResult {
   const isMonthKey = (value: unknown): value is string =>
     typeof value === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(value)
   const ver = obj.version ?? obj.schemaVersion
-  if (ver !== 2) {
-    return { valid: false, error: 'Unsupported backup version. Expected version 2.' }
+  if (ver !== 2 && ver !== 3) {
+    return { valid: false, error: 'Unsupported backup version. Expected version 2 or 3.' }
   }
 
   if (!Array.isArray(obj.expenses)) {
@@ -393,6 +429,94 @@ export function validateBackup(parsed: unknown): BackupValidationResult {
     owed: Number.isInteger(rawAssets.owed) ? Math.max(0, rawAssets.owed!) : 0,
   }
 
+  const investmentArray = <T,>(key: string): T[] | null => {
+    const value = obj[key]
+    if (value === undefined && ver === 2) return []
+    return Array.isArray(value) ? value as T[] : null
+  }
+  const investmentInstruments = investmentArray<InvestmentInstrument>('investmentInstruments')
+  const investmentTransactions = investmentArray<InvestmentTransaction>('investmentTransactions')
+  const investmentCashMovements = investmentArray<InvestmentCashMovement>('investmentCashMovements')
+  const investmentValuations = investmentArray<InvestmentValuation>('investmentValuations')
+  if (!investmentInstruments || !investmentTransactions || !investmentCashMovements || !investmentValuations) {
+    return { valid: false, error: 'Investment records must be arrays.' }
+  }
+
+  const instrumentIds = new Set<string>()
+  for (let i = 0; i < investmentInstruments.length; i++) {
+    const instrument = investmentInstruments[i]
+    const error = validateInstrument(instrument)
+    if (error) return { valid: false, error: `Investment at index ${i}: ${error}` }
+    if (instrumentIds.has(instrument.id)) return { valid: false, error: `Duplicate investment ID '${instrument.id}'.` }
+    instrumentIds.add(instrument.id)
+  }
+
+  const transactionIds = new Set<string>()
+  for (let i = 0; i < investmentTransactions.length; i++) {
+    const transaction = investmentTransactions[i]
+    const error = validateInvestmentTransaction(transaction)
+    if (error) return { valid: false, error: `Investment transaction at index ${i}: ${error}` }
+    if (transactionIds.has(transaction.id)) return { valid: false, error: `Duplicate investment transaction ID '${transaction.id}'.` }
+    if (!instrumentIds.has(transaction.instrumentId)) {
+      return { valid: false, error: `Investment transaction '${transaction.id}' references an unknown instrument.` }
+    }
+    transactionIds.add(transaction.id)
+  }
+
+  const movementIds = new Set<string>()
+  const movementsByTransaction = new Map<string, Set<string>>()
+  const movementTotalsByTransaction = new Map<string, number>()
+  for (let i = 0; i < investmentCashMovements.length; i++) {
+    const movement = investmentCashMovements[i]
+    if (!movement || typeof movement !== 'object' || typeof movement.id !== 'string' || !movement.id.trim() ||
+      typeof movement.transactionId !== 'string' || !movement.transactionId.trim() ||
+      !Number.isSafeInteger(movement.deltaPaise) || !isValidDate(movement.date) ||
+      !['trade', 'edit', 'delete', 'undo'].includes(movement.reason)) {
+      return { valid: false, error: `Investment cash movement at index ${i} is invalid.` }
+    }
+    if (movementIds.has(movement.id)) return { valid: false, error: `Duplicate investment cash movement ID '${movement.id}'.` }
+    if (!transactionIds.has(movement.transactionId)) {
+      return { valid: false, error: `Cash movement '${movement.id}' references an unknown transaction.` }
+    }
+    movementIds.add(movement.id)
+    const ids = movementsByTransaction.get(movement.transactionId) || new Set<string>()
+    ids.add(movement.id)
+    movementsByTransaction.set(movement.transactionId, ids)
+    movementTotalsByTransaction.set(
+      movement.transactionId,
+      (movementTotalsByTransaction.get(movement.transactionId) || 0) + movement.deltaPaise
+    )
+  }
+  for (const transaction of investmentTransactions) {
+    const linkedIds = movementsByTransaction.get(transaction.id) || new Set<string>()
+    if (transaction.cashMovementIds.length !== linkedIds.size || transaction.cashMovementIds.some(id => !linkedIds.has(id))) {
+      return { valid: false, error: `Investment transaction '${transaction.id}' has invalid cash movement references.` }
+    }
+    const movementTotal = movementTotalsByTransaction.get(transaction.id) || 0
+    const expectedMovementTotal = transaction.status === 'active' ? getTradeCashDeltaPaise(transaction) : 0
+    if (!Number.isSafeInteger(movementTotal) || movementTotal !== expectedMovementTotal) {
+      return { valid: false, error: `Cash movements for investment transaction '${transaction.id}' do not reconcile.` }
+    }
+  }
+  try {
+    calculateInvestmentPositions(investmentTransactions)
+  } catch (error) {
+    return { valid: false, error: error instanceof Error ? error.message : 'Investment holdings are invalid.' }
+  }
+
+  const valuationIds = new Set<string>()
+  for (let i = 0; i < investmentValuations.length; i++) {
+    const valuation = investmentValuations[i]
+    if (!valuation || typeof valuation !== 'object' || typeof valuation.id !== 'string' || !valuation.id.trim() ||
+      !instrumentIds.has(valuation.instrumentId) || !Number.isSafeInteger(valuation.unitPricePaise) ||
+      valuation.unitPricePaise <= 0 || !isValidDate(valuation.asOf) || !isValidDate(valuation.recordedAt) ||
+      !['manual', 'transaction', 'provider'].includes(valuation.source)) {
+      return { valid: false, error: `Investment valuation at index ${i} is invalid.` }
+    }
+    if (valuationIds.has(valuation.id)) return { valid: false, error: `Duplicate valuation ID '${valuation.id}'.` }
+    valuationIds.add(valuation.id)
+  }
+
   const netWorthSnapshots: NetWorthSnapshot[] = []
   if (obj.netWorthSnapshots !== undefined) {
     if (!Array.isArray(obj.netWorthSnapshots)) {
@@ -451,9 +575,11 @@ export function validateBackup(parsed: unknown): BackupValidationResult {
       contributions: contributions.length,
       pauseItems: pauseItems.length,
       sipLogs: sipLogs.length,
+      investmentInstruments: investmentInstruments.length,
+      investmentTransactions: investmentTransactions.length,
     },
     data: {
-      schemaVersion: 2,
+      schemaVersion: 3,
       expenses: obj.expenses as Expense[],
       settings,
       goals,
@@ -462,6 +588,10 @@ export function validateBackup(parsed: unknown): BackupValidationResult {
       sipConfig,
       sipLogs,
       assets,
+      investmentInstruments,
+      investmentTransactions,
+      investmentCashMovements,
+      investmentValuations,
       netWorthSnapshots,
       challenge,
       ui,
@@ -502,8 +632,8 @@ function initStore(): StoredData {
         categoryLimits: { ...(oldSettings?.categoryLimits || {}) },
       }
 
-      const initialV2: StoredData = {
-        schemaVersion: 2,
+      const initialV3: StoredData = {
+        schemaVersion: 3,
         expenses: oldExpenses,
         settings: migratedSettings,
         goals: [],
@@ -512,6 +642,10 @@ function initStore(): StoredData {
         sipConfig: { amountPaise: 50000, day: 5, reminder: true },
         sipLogs: [],
         assets: { cashInHand: 0, otherAssets: 0, owed: 0 },
+        investmentInstruments: [],
+        investmentTransactions: [],
+        investmentCashMovements: [],
+        investmentValuations: [],
         netWorthSnapshots: [],
         challenge: {
           completed: Array.isArray(oldSettings?.challengeCompleted) ? oldSettings.challengeCompleted : [],
@@ -520,11 +654,11 @@ function initStore(): StoredData {
         ui: { dismissedInsightWeek: '' },
       }
 
-      const persistSuccess = storage.set(STORE_KEY, initialV2)
+      const persistSuccess = storage.set(STORE_KEY, initialV3)
       if (persistSuccess) {
         storage.remove('spendly-expenses')
         storage.remove('spendly-settings')
-        return initialV2
+        return initialV3
       } else {
         console.error('[ExpenseStore] Safe migration failed to persist v2 state. Preserving legacy data.')
       }
@@ -535,7 +669,7 @@ function initStore(): StoredData {
 
   // Fresh start
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     expenses: [],
     settings: defaultSettings,
     goals: [],
@@ -544,11 +678,17 @@ function initStore(): StoredData {
     sipConfig: { amountPaise: 50000, day: 5, reminder: true },
     sipLogs: [],
     assets: { cashInHand: 0, otherAssets: 0, owed: 0 },
+    investmentInstruments: [],
+    investmentTransactions: [],
+    investmentCashMovements: [],
+    investmentValuations: [],
     netWorthSnapshots: [],
     challenge: { completed: [], reflection: '' },
     ui: { dismissedInsightWeek: '' },
   }
 }
+
+export type InvestmentActionResult = { ok: true } | { ok: false; error: string }
 
 export type Store = {
   expenses: Expense[]
@@ -559,11 +699,16 @@ export type Store = {
   sipConfig: SipConfig
   sipLogs: SipLog[]
   assets: Assets
+  investmentInstruments: InvestmentInstrument[]
+  investmentTransactions: InvestmentTransaction[]
+  investmentCashMovements: InvestmentCashMovement[]
+  investmentValuations: InvestmentValuation[]
   netWorthSnapshots: NetWorthSnapshot[]
   challenge: Challenge
   ui: UIState
   draft: Draft
   deleted?: Expense
+  deletedInvestmentTransaction?: InvestmentTransaction
   setDraft: Dispatch<SetStateAction<Draft>>
   save: () => boolean
   edit: (expense: Expense) => void
@@ -581,6 +726,15 @@ export type Store = {
   updateSipConfig: (patch: Partial<SipConfig>) => void
   logSip: (amountPaise?: number) => boolean
   updateAssets: (patch: Partial<Assets>) => void
+  addInvestmentInstrument: (instrument: InvestmentInstrument) => InvestmentActionResult
+  updateInvestmentInstrument: (instrument: InvestmentInstrument) => InvestmentActionResult
+  removeInvestmentInstrument: (instrumentId: string) => InvestmentActionResult
+  addInvestmentTrade: (transaction: Omit<InvestmentTransaction, 'cashMovementIds'>) => InvestmentActionResult
+  addInvestmentWithTrade: (instrument: InvestmentInstrument, transaction: Omit<InvestmentTransaction, 'cashMovementIds'>) => InvestmentActionResult
+  updateInvestmentTrade: (transaction: Omit<InvestmentTransaction, 'cashMovementIds'>) => InvestmentActionResult
+  removeInvestmentTrade: (transactionId: string) => InvestmentActionResult
+  undoInvestmentTrade: () => InvestmentActionResult
+  addInvestmentValuation: (valuation: InvestmentValuation) => InvestmentActionResult
   recordNetWorthSnapshot: (monthKey: string, netWorthPaise: number) => void
   toggleChallengeDay: (dayIndex: number) => void
   setChallengeReflection: (reflection: string) => void
@@ -598,6 +752,7 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<StoredData>(initStore)
   const [draft, setDraft] = useState<Draft>(blankDraft)
   const [deleted, setDeleted] = useState<Expense>()
+  const [deletedInvestmentTransaction, setDeletedInvestmentTransaction] = useState<InvestmentTransaction>()
 
   // Persist whenever data changes & sync notifications
   useEffect(() => {
@@ -624,7 +779,14 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
     const now = new Date()
     const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
     const goalAssets = data.contributions.reduce((s, c) => s + c.amountPaise, 0)
-    const currentNetWorth = goalAssets + data.assets.cashInHand + data.assets.otherAssets - data.assets.owed
+    const investmentAssets = calculatePortfolioValuePaise(data.investmentTransactions, data.investmentValuations)
+    const currentNetWorth = calculateNetWorthPaise(
+      goalAssets,
+      data.assets.cashInHand,
+      data.assets.otherAssets,
+      data.assets.owed,
+      investmentAssets
+    )
     const existing = data.netWorthSnapshots.find(s => s.monthKey === monthKey)
 
     if (!existing || existing.netWorthPaise !== currentNetWorth) {
@@ -639,7 +801,8 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
         }
       })
     }
-  }, [data.contributions, data.assets.cashInHand, data.assets.otherAssets, data.assets.owed])
+  }, [data.contributions, data.assets.cashInHand, data.assets.otherAssets, data.assets.owed,
+    data.investmentTransactions, data.investmentValuations])
 
   // Apply theme & AMOLED
   useEffect(() => {
@@ -665,11 +828,16 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
       sipConfig: data.sipConfig,
       sipLogs: data.sipLogs,
       assets: data.assets,
+      investmentInstruments: data.investmentInstruments,
+      investmentTransactions: data.investmentTransactions,
+      investmentCashMovements: data.investmentCashMovements,
+      investmentValuations: data.investmentValuations,
       netWorthSnapshots: data.netWorthSnapshots,
       challenge: data.challenge,
       ui: data.ui,
       draft,
       deleted,
+      deletedInvestmentTransaction,
       setDraft,
       save: () => {
         const amount = toPaise(draft.amountText)
@@ -838,6 +1006,83 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
       updateAssets: (patch: Partial<Assets>) => {
         setData(prev => ({ ...prev, assets: { ...prev.assets, ...patch } }))
       },
+      addInvestmentInstrument: (instrument: InvestmentInstrument) => {
+        const result = addInstrumentToState(data, instrument)
+        if (!result.ok) return result
+        setData(prev => ({ ...prev, investmentInstruments: result.state.investmentInstruments }))
+        return { ok: true }
+      },
+      updateInvestmentInstrument: (instrument: InvestmentInstrument) => {
+        const result = updateInstrumentInState(data, instrument)
+        if (!result.ok) return result
+        setData(prev => ({ ...prev, investmentInstruments: result.state.investmentInstruments }))
+        return { ok: true }
+      },
+      removeInvestmentInstrument: (instrumentId: string) => {
+        const result = removeInstrumentFromState(data, instrumentId)
+        if (!result.ok) return result
+        setData(prev => ({
+          ...prev,
+          investmentInstruments: result.state.investmentInstruments,
+          investmentValuations: result.state.investmentValuations,
+        }))
+        return { ok: true }
+      },
+      addInvestmentTrade: (input: Omit<InvestmentTransaction, 'cashMovementIds'>) => {
+        const movementId = crypto.randomUUID()
+        const transaction: InvestmentTransaction = { ...input, status: 'active', cashMovementIds: [] }
+        const result = addTradeToState(data, transaction, movementId)
+        if (!result.ok) return result
+        setData(prev => ({ ...prev, ...result.state }))
+        return { ok: true }
+      },
+      addInvestmentWithTrade: (
+        instrument: InvestmentInstrument,
+        input: Omit<InvestmentTransaction, 'cashMovementIds'>
+      ) => {
+        const transaction: InvestmentTransaction = { ...input, status: 'active', cashMovementIds: [] }
+        const result = addInstrumentAndTradeToState(data, instrument, transaction, crypto.randomUUID())
+        if (!result.ok) return result
+        setData(prev => ({ ...prev, ...result.state }))
+        return { ok: true }
+      },
+      updateInvestmentTrade: (input: Omit<InvestmentTransaction, 'cashMovementIds'>) => {
+        const existing = data.investmentTransactions.find(transaction => transaction.id === input.id)
+        if (!existing) return { ok: false, error: 'Transaction was not found.' }
+        const transaction: InvestmentTransaction = { ...input, cashMovementIds: existing.cashMovementIds }
+        const result = updateTradeInState(data, transaction, crypto.randomUUID(), new Date().toISOString())
+        if (!result.ok) return result
+        setData(prev => ({ ...prev, ...result.state }))
+        return { ok: true }
+      },
+      removeInvestmentTrade: (transactionId: string) => {
+        const removed = data.investmentTransactions.find(transaction => transaction.id === transactionId)
+        if (!removed) return { ok: false, error: 'Transaction was not found.' }
+        const result = voidInvestmentTrade(data, transactionId, crypto.randomUUID(), new Date().toISOString())
+        if (!result.ok) return result
+        setData(prev => ({ ...prev, ...result.state }))
+        setDeletedInvestmentTransaction(removed)
+        return { ok: true }
+      },
+      undoInvestmentTrade: () => {
+        if (!deletedInvestmentTransaction) return { ok: false, error: 'There is no investment transaction to undo.' }
+        const result = undoVoidInvestmentTrade(
+          data,
+          deletedInvestmentTransaction.id,
+          crypto.randomUUID(),
+          new Date().toISOString()
+        )
+        if (!result.ok) return result
+        setData(prev => ({ ...prev, ...result.state }))
+        setDeletedInvestmentTransaction(undefined)
+        return { ok: true }
+      },
+      addInvestmentValuation: (valuation: InvestmentValuation) => {
+        const result = addValuationToState(data, valuation)
+        if (!result.ok) return result
+        setData(prev => ({ ...prev, investmentValuations: result.state.investmentValuations }))
+        return { ok: true }
+      },
       recordNetWorthSnapshot: (monthKey: string, netWorthPaise: number) => {
         setData(prev => ({
           ...prev,
@@ -871,7 +1116,7 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
       },
       loadDemoData: () => {
         setData({
-          schemaVersion: 2,
+          schemaVersion: 3,
           expenses: sampleExpenses,
           settings: sampleSettings,
           goals: sampleGoals,
@@ -880,6 +1125,10 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
           sipConfig: sampleSipConfig,
           sipLogs: sampleSipLogs,
           assets: sampleAssets,
+          investmentInstruments: [],
+          investmentTransactions: [],
+          investmentCashMovements: [],
+          investmentValuations: [],
           netWorthSnapshots: sampleNetWorthSnapshots,
           challenge: sampleChallenge,
           ui: { dismissedInsightWeek: '' },
@@ -887,7 +1136,7 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
       },
       removeDemoData: () => {
         setData({
-          schemaVersion: 2,
+          schemaVersion: 3,
           expenses: [],
           settings: { ...defaultSettings, name: '' },
           goals: [],
@@ -896,6 +1145,10 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
           sipConfig: { amountPaise: 50000, day: 5, reminder: true },
           sipLogs: [],
           assets: { cashInHand: 0, otherAssets: 0, owed: 0 },
+          investmentInstruments: [],
+          investmentTransactions: [],
+          investmentCashMovements: [],
+          investmentValuations: [],
           netWorthSnapshots: [],
           challenge: { completed: [], reflection: '' },
           ui: { dismissedInsightWeek: '' },
@@ -903,7 +1156,7 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
       },
       clearAllData: () => {
         setData({
-          schemaVersion: 2,
+          schemaVersion: 3,
           expenses: [],
           settings: { ...defaultSettings, name: '' },
           goals: [],
@@ -912,6 +1165,10 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
           sipConfig: { amountPaise: 50000, day: 5, reminder: true },
           sipLogs: [],
           assets: { cashInHand: 0, otherAssets: 0, owed: 0 },
+          investmentInstruments: [],
+          investmentTransactions: [],
+          investmentCashMovements: [],
+          investmentValuations: [],
           netWorthSnapshots: [],
           challenge: { completed: [], reflection: '' },
           ui: { dismissedInsightWeek: '' },
@@ -922,7 +1179,7 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
       },
       exportAllData: () => {
         const payload = {
-          version: 2,
+          version: 3,
           exportedAt: new Date().toISOString(),
           expenses: data.expenses,
           settings: data.settings,
@@ -932,6 +1189,10 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
           sipConfig: data.sipConfig,
           sipLogs: data.sipLogs,
           assets: data.assets,
+          investmentInstruments: data.investmentInstruments,
+          investmentTransactions: data.investmentTransactions,
+          investmentCashMovements: data.investmentCashMovements,
+          investmentValuations: data.investmentValuations,
           netWorthSnapshots: data.netWorthSnapshots,
           challenge: data.challenge,
           ui: data.ui,

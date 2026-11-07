@@ -41,7 +41,7 @@ export function Settings({ onClose }: { onClose?: () => void }) {
 
   const handleExport = async () => {
     const jsonStr = exportAllData()
-    const fileName = `spendly-backup-v2-${new Date().toISOString().slice(0, 10)}.json`
+    const fileName = `spendly-backup-v3-${new Date().toISOString().slice(0, 10)}.json`
     if (Capacitor.isNativePlatform()) {
       try {
         const fileResult = await Filesystem.writeFile({
@@ -371,7 +371,7 @@ export function Settings({ onClose }: { onClose?: () => void }) {
           <Button className="setting-row action" onClick={handleExport}>
             <div>
               <strong>Export backup</strong>
-              <small>Save full version 2 JSON backup</small>
+              <small>Save full version 3 JSON backup</small>
             </div>
             <Icon name="chevron" />
           </Button>
@@ -414,6 +414,7 @@ export function Settings({ onClose }: { onClose?: () => void }) {
               <li>All savings goals and contributions</li>
               <li>All 24-hour pause items</li>
               <li>All practice SIP logs and streaks</li>
+              <li>All investment holdings, transactions, valuations, and cash links</li>
               <li>All assets and net worth snapshots</li>
               <li>7-day challenge progress and reflections</li>
               <li>Custom limits, settings, and profile name</li>
@@ -450,6 +451,8 @@ export function Settings({ onClose }: { onClose?: () => void }) {
                   <li><strong>{restoreValidation.counts.contributions}</strong> contributions</li>
                   <li><strong>{restoreValidation.counts.pauseItems}</strong> pause items</li>
                   <li><strong>{restoreValidation.counts.sipLogs}</strong> SIP records</li>
+                  <li><strong>{restoreValidation.counts.investmentInstruments}</strong> investments</li>
+                  <li><strong>{restoreValidation.counts.investmentTransactions}</strong> investment transactions</li>
                 </>
               )}
             </ul>

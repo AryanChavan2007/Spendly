@@ -1,6 +1,20 @@
-import type { InvestmentPosition, InvestmentTransaction } from './types'
+import type {
+  InvestmentAssetType,
+  InvestmentInstrument,
+  InvestmentPosition,
+  InvestmentTransaction,
+  InvestmentValuation,
+} from './types'
 
 export const QUANTITY_SCALE = 1_000_000
+export type InvestmentTypeFilter = 'all' | InvestmentAssetType
+
+export function filterInvestmentsByType(
+  instruments: InvestmentInstrument[],
+  type: InvestmentTypeFilter
+): InvestmentInstrument[] {
+  return type === 'all' ? instruments : instruments.filter(instrument => instrument.type === type)
+}
 
 function safeIntegerResult(value: bigint, label: string): number {
   if (value < 0n || value > BigInt(Number.MAX_SAFE_INTEGER)) {
@@ -32,7 +46,11 @@ export function getTradeCashDeltaPaise(transaction: Pick<InvestmentTransaction,
   }
   const charges = transaction.feesPaise + transaction.taxesPaise
   if (!Number.isSafeInteger(charges)) throw new RangeError('Trade charges are outside the supported range.')
-  if (transaction.type === 'buy') return -(gross + charges)
+  if (transaction.type === 'buy') {
+    const total = gross + charges
+    if (!Number.isSafeInteger(total)) throw new RangeError('Purchase total is outside the supported range.')
+    return -total
+  }
   const proceeds = gross - charges
   if (!Number.isSafeInteger(proceeds) || proceeds <= 0) {
     throw new RangeError('Sale proceeds after fees and taxes must be greater than zero.')
@@ -53,11 +71,11 @@ export function calculateInvestmentPositions(
   const positions = new Map<string, InvestmentPosition>()
   const lotsByInstrument = new Map<string, Lot[]>()
   const ordered = transactions
-    .filter(transaction => transaction.status === 'active')
-    .slice()
-    .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id))
+    .map((transaction, index) => ({ transaction, index }))
+    .filter(({ transaction }) => transaction.status === 'active')
+    .sort((a, b) => a.transaction.date.localeCompare(b.transaction.date) || a.index - b.index)
 
-  for (const transaction of ordered) {
+  for (const { transaction } of ordered) {
     const gross = calculateGrossPaise(transaction.quantityMicros, transaction.unitPricePaise)
     const cashDelta = getTradeCashDeltaPaise(transaction)
     const position = positions.get(transaction.instrumentId) || {
@@ -108,4 +126,53 @@ export function calculateInvestmentPositions(
 
 export function calculateCurrentValuePaise(quantityMicros: number, unitPricePaise: number): number {
   return calculateGrossPaise(quantityMicros, unitPricePaise)
+}
+
+export function calculatePortfolioValuePaise(
+  transactions: InvestmentTransaction[],
+  valuations: InvestmentValuation[]
+): number {
+  const positions = calculateInvestmentPositions(transactions)
+  const latestByInstrument = new Map<string, InvestmentValuation>()
+  for (const valuation of valuations) {
+    const previous = latestByInstrument.get(valuation.instrumentId)
+    if (!previous || valuation.asOf > previous.asOf ||
+      (valuation.asOf === previous.asOf && valuation.recordedAt > previous.recordedAt)) {
+      latestByInstrument.set(valuation.instrumentId, valuation)
+    }
+  }
+  let total = 0
+  for (const position of positions.values()) {
+    if (position.quantityMicros === 0) continue
+    const valuation = latestByInstrument.get(position.instrumentId)
+    if (valuation) total += calculateCurrentValuePaise(position.quantityMicros, valuation.unitPricePaise)
+  }
+  if (!Number.isSafeInteger(total)) throw new RangeError('Portfolio value is outside the supported range.')
+  return total
+}
+
+export type InvestmentSalePreview = {
+  grossPaise: number
+  chargesPaise: number
+  proceedsPaise: number
+  realizedProfitLossPaise: number
+}
+
+export function previewInvestmentSale(
+  transactions: InvestmentTransaction[],
+  sale: InvestmentTransaction
+): InvestmentSalePreview {
+  if (sale.type !== 'sell' || sale.status !== 'active') throw new RangeError('Sale preview requires an active sale.')
+  if (transactions.some(transaction => transaction.id === sale.id)) throw new RangeError('Sale preview ID must be unique.')
+  const before = calculateInvestmentPositions(transactions).get(sale.instrumentId)?.realizedProfitLossPaise || 0
+  const after = calculateInvestmentPositions([...transactions, sale]).get(sale.instrumentId)
+  if (!after) throw new RangeError('Sale preview did not produce an investment position.')
+  const grossPaise = calculateGrossPaise(sale.quantityMicros, sale.unitPricePaise)
+  const proceedsPaise = getTradeCashDeltaPaise(sale)
+  return {
+    grossPaise,
+    chargesPaise: sale.feesPaise + sale.taxesPaise,
+    proceedsPaise,
+    realizedProfitLossPaise: after.realizedProfitLossPaise - before,
+  }
 }

@@ -1,10 +1,13 @@
 import { useMemo, useState } from 'react'
 import { Button, formatMoney, Input, MoneyInput, Title } from '../components/ui'
 import { useExpenses } from '../data/ExpenseStore'
+import { calculatePortfolioValuePaise } from '../investment/investmentCalculations'
+import { Investments } from './Investments'
 import {
   getGoalSavedPaise,
   getMonthlyEssentials,
   isThisMonth,
+  calculateNetWorthPaise,
   monthlySummary,
 } from '../utils/financeSummary'
 import {
@@ -36,12 +39,17 @@ export function Grow() {
     sipConfig,
     sipLogs,
     assets,
+    investmentInstruments,
+    investmentTransactions,
+    investmentCashMovements,
+    investmentValuations,
     netWorthSnapshots,
     updateSipConfig,
     logSip,
     updateAssets,
     addPauseItem,
   } = useExpenses()
+  const [investmentsOpen, setInvestmentsOpen] = useState(false)
 
   // Planner state with clamping
   const [mode, setMode] = useState<'future' | 'needed'>('future')
@@ -157,8 +165,14 @@ export function Grow() {
 
   // Net worth calculation
   const goalAssets = contributions.reduce((n, c) => n + c.amountPaise, 0)
-  const totalAssets = goalAssets + assets.cashInHand + assets.otherAssets
-  const netWorth = totalAssets - assets.owed
+  const investmentAssets = calculatePortfolioValuePaise(investmentTransactions, investmentValuations)
+  const netWorth = calculateNetWorthPaise(
+    goalAssets,
+    assets.cashInHand,
+    assets.otherAssets,
+    assets.owed,
+    investmentAssets
+  )
 
   const handleSmartPurchaseAddToPause = () => {
     if (cash > 0) {
@@ -168,6 +182,10 @@ export function Grow() {
     }
   }
 
+  if (investmentsOpen) {
+    return <Investments onBack={() => setInvestmentsOpen(false)} />
+  }
+
   return (
     <div className="page grow-page">
       <header className="page-header compact">
@@ -175,6 +193,7 @@ export function Grow() {
           <p className="eyebrow">Learn with zero risk</p>
           <Title>Grow</Title>
         </div>
+        <Button className="secondary" onClick={() => setInvestmentsOpen(true)}>Investments</Button>
       </header>
       <div className="education-banner">
         Educational tools only. Numbers are hypothetical—not recommendations or promised returns.
@@ -542,7 +561,7 @@ export function Grow() {
           <strong className="net-total">{formatMoney(netWorth)}</strong>
         </div>
         <p className="formula" style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 12, lineHeight: 1.5 }}>
-          Net Worth = Savings goals ({formatMoney(goalAssets)}) + Cash in hand ({formatMoney(assets.cashInHand)}) + Other assets ({formatMoney(assets.otherAssets)}) − Money owed ({formatMoney(assets.owed)}). Savings goals are tracked separately to prevent double-counting.
+          Net Worth = Savings goals ({formatMoney(goalAssets)}) + Cash ({formatMoney(assets.cashInHand)}) + Other assets ({formatMoney(assets.otherAssets)}) + Investments ({formatMoney(investmentAssets)}) − Money owed ({formatMoney(assets.owed)}). Other assets must exclude investments tracked here. Investment purchases transfer cash into holdings; they are not expenses.
         </p>
 
         <div className="planner-inputs">
@@ -581,6 +600,10 @@ export function Grow() {
         <div className="asset-row">
           <span>Savings goals</span>
           <strong>{formatMoney(goalAssets)}</strong>
+        </div>
+        <div className="asset-row">
+          <span>Investments</span>
+          <strong>{formatMoney(investmentAssets)}</strong>
         </div>
 
         <NetWorthChart snapshots={netWorthSnapshots} />
