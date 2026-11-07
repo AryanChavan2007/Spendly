@@ -147,8 +147,8 @@ export function AddInvestmentModal({
     }
   }
 
-  const submit = (event: FormEvent) => {
-    event.preventDefault()
+  const submit = (event?: FormEvent) => {
+    if (event) event.preventDefault()
     if (submitting.current) return
     submitting.current = true
     setIsSubmitting(true)
@@ -211,7 +211,7 @@ export function AddInvestmentModal({
           </div>
           <Button className="icon-button" aria-label="Close" onClick={onClose} disabled={isSubmitting}><Icon name="close" /></Button>
         </header>
-        <form onSubmit={submit}>
+        <form onSubmit={submit} action="javascript:void(0);" noValidate>
           {(mode === 'new' || mode === 'editInstrument') && (
             <>
               <label className="investment-field">Asset type
@@ -281,7 +281,7 @@ export function AddInvestmentModal({
             </>
           )}
           {error && <p className="error-text investment-error" role="alert">{error}</p>}
-          <Button className="primary full" type="submit" disabled={isSubmitting || Boolean(saleEstimate && !saleEstimate.ok)}>{mode === 'valuation' ? 'Save valuation' : mode === 'editInstrument' ? 'Save investment' : mode === 'edit' ? 'Save transaction' : mode === 'sell' ? 'Confirm sale' : 'Confirm purchase'}</Button>
+          <Button className="primary full" type="button" onClick={() => submit()} disabled={isSubmitting || Boolean(saleEstimate && !saleEstimate.ok)}>{mode === 'valuation' ? 'Save valuation' : mode === 'editInstrument' ? 'Save investment' : mode === 'edit' ? 'Save transaction' : mode === 'sell' ? 'Confirm sale' : 'Confirm purchase'}</Button>
         </form>
       </section>
     </div>
