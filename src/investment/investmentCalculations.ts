@@ -37,14 +37,10 @@ export function calculateGrossPaise(quantityMicros: number, unitPricePaise: numb
 export function getTradeCashDeltaPaise(transaction: Pick<InvestmentTransaction,
   'type' | 'quantityMicros' | 'unitPricePaise' | 'feesPaise' | 'taxesPaise'
 >): number {
+  const feesPaise = Number.isSafeInteger(transaction.feesPaise) && transaction.feesPaise >= 0 ? transaction.feesPaise : 0
+  const taxesPaise = Number.isSafeInteger(transaction.taxesPaise) && transaction.taxesPaise >= 0 ? transaction.taxesPaise : 0
   const gross = calculateGrossPaise(transaction.quantityMicros, transaction.unitPricePaise)
-  if (!Number.isSafeInteger(transaction.feesPaise) || transaction.feesPaise < 0) {
-    throw new RangeError('Fees must be a non-negative safe integer in paise.')
-  }
-  if (!Number.isSafeInteger(transaction.taxesPaise) || transaction.taxesPaise < 0) {
-    throw new RangeError('Taxes must be a non-negative safe integer in paise.')
-  }
-  const charges = transaction.feesPaise + transaction.taxesPaise
+  const charges = feesPaise + taxesPaise
   if (!Number.isSafeInteger(charges)) throw new RangeError('Trade charges are outside the supported range.')
   if (transaction.type === 'buy') {
     const total = gross + charges

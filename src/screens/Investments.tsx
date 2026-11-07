@@ -81,44 +81,52 @@ export function Investments({ onBack }: { onBack: () => void }) {
   }, [] as { type: InvestmentInstrument['type']; valuePaise: number }[])
 
   const handleSave = (result: InvestmentModalResult, current?: ModalState): InvestmentActionResult => {
-    if (result.kind === 'valuation') {
-      if (!current?.instrument) return { ok: false, error: 'Select an instrument first.' }
-      return addInvestmentValuation(manualPriceProvider.createValuation({
-        id: generateId(),
-        instrumentId: current.instrument.id,
-        unitPricePaise: result.unitPricePaise,
-        asOf: result.asOf,
-        recordedAt: new Date().toISOString(),
-      }))
-    }
-
-    if (result.kind === 'instrument') {
-      if (!current?.instrument) return { ok: false, error: 'Select an instrument first.' }
-      return updateInvestmentInstrument({
-        ...result.instrument,
-        id: current.instrument.id,
-        createdAt: current.instrument.createdAt,
-      })
-    }
-
-    const instrument = current?.instrument
-    const instrumentId = instrument?.id || generateId()
-    const transaction: Omit<InvestmentTransaction, 'cashMovementIds'> = {
-      id: current?.transaction?.id || generateId(),
-      instrumentId,
-      ...result.transaction,
-      status: 'active',
-    }
-    if (result.instrument) {
-      const newInstrument: InvestmentInstrument = {
-        ...result.instrument,
-        id: instrumentId,
-        createdAt: new Date().toISOString(),
+    try {
+      console.log('[Investments] handleSave started:', result, current)
+      if (result.kind === 'valuation') {
+        if (!current?.instrument) return { ok: false, error: 'Select an instrument first.' }
+        return addInvestmentValuation(manualPriceProvider.createValuation({
+          id: generateId(),
+          instrumentId: current.instrument.id,
+          unitPricePaise: result.unitPricePaise,
+          asOf: result.asOf,
+          recordedAt: new Date().toISOString(),
+        }))
       }
-      return addInvestmentWithTrade(newInstrument, transaction)
+
+      if (result.kind === 'instrument') {
+        if (!current?.instrument) return { ok: false, error: 'Select an instrument first.' }
+        return updateInvestmentInstrument({
+          ...result.instrument,
+          id: current.instrument.id,
+          createdAt: current.instrument.createdAt,
+        })
+      }
+
+      const instrument = current?.instrument
+      const instrumentId = instrument?.id || generateId()
+      const transaction: Omit<InvestmentTransaction, 'cashMovementIds'> = {
+        id: current?.transaction?.id || generateId(),
+        instrumentId,
+        ...result.transaction,
+        status: 'active',
+      }
+      if (result.instrument) {
+        const newInstrument: InvestmentInstrument = {
+          ...result.instrument,
+          id: instrumentId,
+          createdAt: new Date().toISOString(),
+        }
+        console.log('[Investments] Creating new instrument with trade:', newInstrument, transaction)
+        return addInvestmentWithTrade(newInstrument, transaction)
+      }
+      if (current?.transaction) return updateInvestmentTrade(transaction)
+      console.log('[Investments] Adding trade to existing instrument:', transaction)
+      return addInvestmentTrade(transaction)
+    } catch (saveErr) {
+      console.error('[Investments] Exception in handleSave:', saveErr)
+      return { ok: false, error: saveErr instanceof Error ? saveErr.message : 'Could not save investment.' }
     }
-    if (current?.transaction) return updateInvestmentTrade(transaction)
-    return addInvestmentTrade(transaction)
   }
 
   const handleDelete = (transaction: InvestmentTransaction) => {

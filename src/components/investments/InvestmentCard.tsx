@@ -115,7 +115,19 @@ export function InvestmentCard({
                 <small>Fees {formatMoney(transaction.feesPaise, currency)} · Taxes {formatMoney(transaction.taxesPaise, currency)}</small>
               </div>
               <div className="investment-transaction-actions">
-                <strong>{transaction.type === 'buy' ? 'Cash out' : 'Net proceeds'} {formatMoney(Math.abs(getTradeCashDeltaPaise(transaction)), currency)}</strong>
+                <strong>
+                  {transaction.type === 'buy' ? 'Cash out' : 'Net proceeds'}{' '}
+                  {formatMoney(
+                    (() => {
+                      try {
+                        return Math.abs(getTradeCashDeltaPaise(transaction))
+                      } catch {
+                        return Math.round((transaction.quantityMicros * transaction.unitPricePaise) / 1_000_000)
+                      }
+                    })(),
+                    currency
+                  )}
+                </strong>
                 {transaction.status === 'active' && (
                   <>
                     <Button className="icon-button" aria-label={`Edit ${transaction.type} ${instrument.name}`} onClick={() => onEditTransaction(transaction)}><Pencil size={15} /></Button>

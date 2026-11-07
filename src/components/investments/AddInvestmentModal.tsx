@@ -154,6 +154,7 @@ export function AddInvestmentModal({
     setIsSubmitting(true)
     setError('')
     try {
+      console.log('[AddInvestmentModal] Submitting investment modal form, mode:', mode, 'type:', type)
       let payload: InvestmentModalResult
       if (mode === 'valuation') {
         if (unitPricePaise <= 0) throw new Error('Enter a valuation greater than zero.')
@@ -183,7 +184,9 @@ export function AddInvestmentModal({
           },
         }
       }
+      console.log('[AddInvestmentModal] Form payload ready:', payload)
       const result = onSave(payload)
+      console.log('[AddInvestmentModal] onSave result:', result)
       if (result.ok) onClose()
       else {
         setError(result.error)
@@ -191,6 +194,7 @@ export function AddInvestmentModal({
         setIsSubmitting(false)
       }
     } catch (submitError) {
+      console.error('[AddInvestmentModal] Submit exception:', submitError)
       setError(submitError instanceof Error ? submitError.message : 'Check the entered values.')
       submitting.current = false
       setIsSubmitting(false)
