@@ -15,6 +15,26 @@ function formatQuantity(quantityMicros: number): string {
   return (quantityMicros / 1_000_000).toFixed(6).replace(/\.?0+$/, '')
 }
 
+function safeDate(value: string | Date): string {
+  try {
+    const d = new Date(value)
+    if (Number.isNaN(d.getTime())) return typeof value === 'string' ? value : 'N/A'
+    return d.toLocaleDateString('en-IN')
+  } catch {
+    return typeof value === 'string' ? value : 'N/A'
+  }
+}
+
+function safeDateTime(value: string | Date): string {
+  try {
+    const d = new Date(value)
+    if (Number.isNaN(d.getTime())) return typeof value === 'string' ? value : 'N/A'
+    return d.toLocaleString('en-IN')
+  } catch {
+    return typeof value === 'string' ? value : 'N/A'
+  }
+}
+
 export function InvestmentCard({
   instrument,
   position,
@@ -66,7 +86,7 @@ export function InvestmentCard({
       </div>
       {instrument.fixedDeposit && (
         <p className="investment-meta">
-          Principal {formatMoney(instrument.fixedDeposit.principalPaise, currency)} · {(instrument.fixedDeposit.annualRateBasisPoints / 100).toFixed(2)}% p.a. · Matures {new Date(`${instrument.fixedDeposit.maturityDate.slice(0, 10)}T00:00:00`).toLocaleDateString()}
+          Principal {formatMoney(instrument.fixedDeposit.principalPaise, currency)} · {(instrument.fixedDeposit.annualRateBasisPoints / 100).toFixed(2)}% p.a. · Matures {safeDate(instrument.fixedDeposit.maturityDate)}
         </p>
       )}
       <div className="investment-position-row">
@@ -76,7 +96,7 @@ export function InvestmentCard({
       </div>
       <p className="investment-meta">
         {valuation
-          ? `${valuation.source === 'transaction' ? 'Purchase price' : 'Manual valuation'} · updated ${new Date(valuation.recordedAt).toLocaleString()} · as of ${new Date(valuation.asOf).toLocaleString()}`
+          ? `${valuation.source === 'transaction' ? 'Purchase price' : 'Manual valuation'} · updated ${safeDateTime(valuation.recordedAt)} · as of ${safeDateTime(valuation.asOf)}`
           : 'No valuation recorded'}
       </p>
       <div className="row investment-actions">
@@ -91,7 +111,7 @@ export function InvestmentCard({
             <div className={`investment-transaction ${transaction.status === 'voided' ? 'voided' : ''}`} key={transaction.id}>
               <div>
                 <strong>{transaction.status === 'voided' ? 'Voided' : transaction.type === 'buy' ? 'Purchase' : 'Sale'}</strong>
-                <small>{new Date(transaction.date).toLocaleDateString()} · {formatQuantity(transaction.quantityMicros)} units · {formatMoney(transaction.unitPricePaise, currency)} / unit</small>
+                <small>{safeDate(transaction.date)} · {formatQuantity(transaction.quantityMicros)} units · {formatMoney(transaction.unitPricePaise, currency)} / unit</small>
                 <small>Fees {formatMoney(transaction.feesPaise, currency)} · Taxes {formatMoney(transaction.taxesPaise, currency)}</small>
               </div>
               <div className="investment-transaction-actions">

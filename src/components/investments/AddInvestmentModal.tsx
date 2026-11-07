@@ -21,17 +21,34 @@ export type InvestmentModalResult =
   | { kind: 'instrument'; instrument: InvestmentFormInstrument }
 
 function localDateTime(date = new Date()): string {
-  const adjusted = new Date(date)
-  adjusted.setMinutes(adjusted.getMinutes() - adjusted.getTimezoneOffset())
-  return adjusted.toISOString().slice(0, 16)
+  try {
+    const adjusted = new Date(date)
+    if (Number.isNaN(adjusted.getTime())) return new Date().toISOString().slice(0, 16)
+    adjusted.setMinutes(adjusted.getMinutes() - adjusted.getTimezoneOffset())
+    return adjusted.toISOString().slice(0, 16)
+  } catch {
+    return new Date().toISOString().slice(0, 16)
+  }
 }
 
 function dateOnly(date: Date | string = new Date()): string {
-  return typeof date === 'string' ? date.slice(0, 10) : date.toISOString().slice(0, 10)
+  try {
+    const d = typeof date === 'string' ? new Date(date) : date
+    if (Number.isNaN(d.getTime())) return new Date().toISOString().slice(0, 10)
+    return d.toISOString().slice(0, 10)
+  } catch {
+    return new Date().toISOString().slice(0, 10)
+  }
 }
 
 function formatLocalDateTime(value: string): string {
-  return new Date(value).toISOString()
+  try {
+    const d = new Date(value)
+    if (Number.isNaN(d.getTime())) return new Date().toISOString()
+    return d.toISOString()
+  } catch {
+    return new Date().toISOString()
+  }
 }
 
 export function AddInvestmentModal({
