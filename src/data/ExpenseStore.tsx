@@ -43,6 +43,7 @@ import { syncNotifications } from '../utils/notifications'
 import { syncStatusBar } from '../utils/statusBar'
 import { hapticLight } from '../utils/haptics'
 import { calculateNetWorthPaise } from '../utils/financeSummary'
+import { generateId } from '../utils/uuid'
 import {
   calculateInvestmentPositions,
   calculatePortfolioValuePaise,
@@ -615,7 +616,7 @@ function initStore(): StoredData {
     if (oldExpensesRaw || oldSettings) {
       const oldExpenses: Expense[] = Array.isArray(oldExpensesRaw)
         ? oldExpensesRaw.map((e: Partial<Expense>) => ({
-            id: e.id || crypto.randomUUID(),
+            id: e.id || generateId(),
             amount: e.amount || 0,
             category: e.category || 'Food',
             mode: e.mode || 'UPI',
@@ -843,7 +844,7 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
         const amount = toPaise(draft.amountText)
         if (!amount) return false
         const expense: Expense = {
-          id: draft.editId || crypto.randomUUID(),
+          id: draft.editId || generateId(),
           amount,
           category: draft.category,
           mode: draft.mode,
@@ -899,7 +900,7 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
       addGoal: (g: Omit<Goal, 'id' | 'createdAt'>) => {
         const goal: Goal = {
           ...g,
-          id: crypto.randomUUID(),
+          id: generateId(),
           createdAt: new Date().toISOString(),
         }
         setData(prev => ({ ...prev, goals: [...prev.goals, goal] }))
@@ -921,7 +922,7 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
       addContribution: (goalId: string, amountPaise: number) => {
         if (amountPaise <= 0) return
         const contribution: Contribution = {
-          id: crypto.randomUUID(),
+          id: generateId(),
           goalId,
           amountPaise,
           date: new Date().toISOString(),
@@ -937,7 +938,7 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
         const now = new Date()
         const ready = new Date(now.getTime() + 24 * 3600000)
         const item: PauseItem = {
-          id: crypto.randomUUID(),
+          id: generateId(),
           name: name.trim(),
           pricePaise,
           startedAt: now.toISOString(),
@@ -984,7 +985,7 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
         }
         const amountPaise = customAmount ?? data.sipConfig.amountPaise
         const sipLog: SipLog = {
-          id: crypto.randomUUID(),
+          id: generateId(),
           monthKey,
           amountPaise,
           date: now.toISOString(),
@@ -993,7 +994,7 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
           let nextContributions = prev.contributions
           if (prev.sipConfig.linkedGoalId) {
             const contribution: Contribution = {
-              id: crypto.randomUUID(),
+              id: generateId(),
               goalId: prev.sipConfig.linkedGoalId,
               amountPaise,
               date: now.toISOString(),
@@ -1034,7 +1035,7 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
         return { ok: true }
       },
       addInvestmentTrade: (input: Omit<InvestmentTransaction, 'cashMovementIds'>) => {
-        const movementId = crypto.randomUUID()
+        const movementId = generateId()
         const transaction: InvestmentTransaction = { ...input, status: 'active', cashMovementIds: [] }
         const result = addTradeToState(data, transaction, movementId)
         if (!result.ok) return result
@@ -1046,7 +1047,7 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
         input: Omit<InvestmentTransaction, 'cashMovementIds'>
       ) => {
         const transaction: InvestmentTransaction = { ...input, status: 'active', cashMovementIds: [] }
-        const result = addInstrumentAndTradeToState(data, instrument, transaction, crypto.randomUUID())
+        const result = addInstrumentAndTradeToState(data, instrument, transaction, generateId())
         if (!result.ok) return result
         setData(prev => ({ ...prev, ...result.state }))
         return { ok: true }
@@ -1055,7 +1056,7 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
         const existing = data.investmentTransactions.find(transaction => transaction.id === input.id)
         if (!existing) return { ok: false, error: 'Transaction was not found.' }
         const transaction: InvestmentTransaction = { ...input, cashMovementIds: existing.cashMovementIds }
-        const result = updateTradeInState(data, transaction, crypto.randomUUID(), new Date().toISOString())
+        const result = updateTradeInState(data, transaction, generateId(), new Date().toISOString())
         if (!result.ok) return result
         setData(prev => ({ ...prev, ...result.state }))
         return { ok: true }
@@ -1063,7 +1064,7 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
       removeInvestmentTrade: (transactionId: string) => {
         const removed = data.investmentTransactions.find(transaction => transaction.id === transactionId)
         if (!removed) return { ok: false, error: 'Transaction was not found.' }
-        const result = voidInvestmentTrade(data, transactionId, crypto.randomUUID(), new Date().toISOString())
+        const result = voidInvestmentTrade(data, transactionId, generateId(), new Date().toISOString())
         if (!result.ok) return result
         setData(prev => ({ ...prev, ...result.state }))
         setDeletedInvestmentTransaction(removed)
@@ -1074,7 +1075,7 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
         const result = undoVoidInvestmentTrade(
           data,
           deletedInvestmentTransaction.id,
-          crypto.randomUUID(),
+          generateId(),
           new Date().toISOString()
         )
         if (!result.ok) return result

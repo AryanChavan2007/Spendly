@@ -7,6 +7,7 @@ import {
   QUANTITY_SCALE,
 } from '../../investment/investmentCalculations'
 import { Button, formatMoney, Icon, Input, MoneyInput } from '../ui'
+import { generateId } from '../../utils/uuid'
 
 export type InvestmentFormTrade = Pick<InvestmentTransaction,
   'type' | 'quantityMicros' | 'unitPricePaise' | 'feesPaise' | 'taxesPaise' | 'date' | 'note'
@@ -74,7 +75,7 @@ export function AddInvestmentModal({
           if (!instrument) throw new Error('Select an instrument first.')
           const quantityMicros = Math.round(Number(quantity) * QUANTITY_SCALE)
           const sale: InvestmentTransaction = {
-            id: crypto.randomUUID(),
+            id: generateId(),
             instrumentId: instrument.id,
             type: 'sell',
             quantityMicros,

@@ -70,9 +70,10 @@ export function calculateInvestmentPositions(
 ): Map<string, InvestmentPosition> {
   const positions = new Map<string, InvestmentPosition>()
   const lotsByInstrument = new Map<string, Lot[]>()
+  if (!Array.isArray(transactions)) return positions
   const ordered = transactions
     .map((transaction, index) => ({ transaction, index }))
-    .filter(({ transaction }) => transaction.status === 'active')
+    .filter(({ transaction }) => transaction && transaction.status === 'active')
     .sort((a, b) => a.transaction.date.localeCompare(b.transaction.date) || a.index - b.index)
 
   for (const { transaction } of ordered) {
@@ -132,23 +133,36 @@ export function calculatePortfolioValuePaise(
   transactions: InvestmentTransaction[],
   valuations: InvestmentValuation[]
 ): number {
-  const positions = calculateInvestmentPositions(transactions)
-  const latestByInstrument = new Map<string, InvestmentValuation>()
-  for (const valuation of valuations) {
-    const previous = latestByInstrument.get(valuation.instrumentId)
-    if (!previous || valuation.asOf > previous.asOf ||
-      (valuation.asOf === previous.asOf && valuation.recordedAt > previous.recordedAt)) {
-      latestByInstrument.set(valuation.instrumentId, valuation)
+  try {
+    const positions = calculateInvestmentPositions(transactions)
+    const latestByInstrument = new Map<string, InvestmentValuation>()
+    if (Array.isArray(valuations)) {
+      for (const valuation of valuations) {
+        if (!valuation || !valuation.instrumentId || !Number.isSafeInteger(valuation.unitPricePaise) || valuation.unitPricePaise <= 0) continue
+        const previous = latestByInstrument.get(valuation.instrumentId)
+        if (!previous || valuation.asOf > previous.asOf ||
+          (valuation.asOf === previous.asOf && valuation.recordedAt > previous.recordedAt)) {
+          latestByInstrument.set(valuation.instrumentId, valuation)
+        }
+      }
     }
+    let total = 0
+    for (const position of positions.values()) {
+      if (!position || position.quantityMicros <= 0) continue
+      const valuation = latestByInstrument.get(position.instrumentId)
+      if (valuation && valuation.unitPricePaise > 0) {
+        try {
+          total += calculateCurrentValuePaise(position.quantityMicros, valuation.unitPricePaise)
+        } catch {
+          // skip
+        }
+      }
+    }
+    if (!Number.isSafeInteger(total)) return 0
+    return total
+  } catch {
+    return 0
   }
-  let total = 0
-  for (const position of positions.values()) {
-    if (position.quantityMicros === 0) continue
-    const valuation = latestByInstrument.get(position.instrumentId)
-    if (valuation) total += calculateCurrentValuePaise(position.quantityMicros, valuation.unitPricePaise)
-  }
-  if (!Number.isSafeInteger(total)) throw new RangeError('Portfolio value is outside the supported range.')
-  return total
 }
 
 export type InvestmentSalePreview = {

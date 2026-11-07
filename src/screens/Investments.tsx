@@ -13,6 +13,7 @@ import {
 } from '../investment/investmentCalculations'
 import { manualPriceProvider } from '../investment/investmentPrices'
 import { investmentAssetTypes, type InvestmentInstrument, type InvestmentTransaction } from '../investment/types'
+import { generateId } from '../utils/uuid'
 
 type ModalState = {
   mode: 'new' | 'buy' | 'sell' | 'edit' | 'editInstrument' | 'valuation'
@@ -83,7 +84,7 @@ export function Investments({ onBack }: { onBack: () => void }) {
     if (result.kind === 'valuation') {
       if (!current?.instrument) return { ok: false, error: 'Select an instrument first.' }
       return addInvestmentValuation(manualPriceProvider.createValuation({
-        id: crypto.randomUUID(),
+        id: generateId(),
         instrumentId: current.instrument.id,
         unitPricePaise: result.unitPricePaise,
         asOf: result.asOf,
@@ -101,9 +102,9 @@ export function Investments({ onBack }: { onBack: () => void }) {
     }
 
     const instrument = current?.instrument
-    const instrumentId = instrument?.id || crypto.randomUUID()
+    const instrumentId = instrument?.id || generateId()
     const transaction: Omit<InvestmentTransaction, 'cashMovementIds'> = {
-      id: current?.transaction?.id || crypto.randomUUID(),
+      id: current?.transaction?.id || generateId(),
       instrumentId,
       ...result.transaction,
       status: 'active',

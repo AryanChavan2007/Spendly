@@ -9,6 +9,7 @@ import { Settings } from './screens/Settings'
 import { Goals } from './screens/Goals'
 import { Grow } from './screens/Grow'
 import { BottomNav, type Tab } from './components/BottomNav'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import type { PauseItem } from './data/types'
 
 function AppContent() {
@@ -97,8 +98,10 @@ function AppContent() {
 
 export default function App() {
   return (
-    <ExpenseProvider>
-      <AppContent />
-    </ExpenseProvider>
+    <ErrorBoundary>
+      <ExpenseProvider>
+        <AppContent />
+      </ExpenseProvider>
+    </ErrorBoundary>
   )
 }
